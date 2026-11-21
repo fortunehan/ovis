@@ -25,6 +25,8 @@ export const failureText = (error: unknown): string => error instanceof ApiError
 export function statusText(t: ReturnType<typeof useT>, status: RelayStatus): string {
   if (status.blocked === "serve_only") return t("Blocked: OVIS_TAILSCALE_SERVE_ONLY says tailscale serve is the only way in. Unset it on this PC and restart the app.");
   if (status.blocked === "identity_unreadable") return t("Blocked: this PC's relay identity cannot be read. Reset it under More settings in Devices and PCs to use the relay again.");
+  // proxy-only mode refused the relay connection: the server's own words say why (the proxy it could not reach)
+  if (status.outbound?.refusal && status.phase !== "online" && status.phase !== "off") return t("Blocked by proxy-only mode: {reason}. Retrying.", { reason: status.outbound.refusal });
   const pass = status.pass;
   if (pass?.refused && status.phase === "error" && pass.state !== "ok") return pass.state === "not_listed"
     ? t("Add this PC to your Ovis account to use the Ovis relay, or connect over the same Wi-Fi or Tailscale.")
@@ -87,6 +89,22 @@ export function RelayDirectRow({ relay, readOnly }: { relay: RelayState; readOnl
       {!readOnly && <Toggle label={t("Same Wi-Fi direct connection")} checked={direct.on} disabled={relay.pending} onChange={change} />}
     </SettingsRow>
   );
+}
+
+/**
+ * Settings → Ovis relay, while the server runs in proxy-only mode (docs/relay.md, "Proxy-only mode"): said, never
+ * switched, because only the environment the server starts in sets it. The local-network ways in are off with it.
+ */
+export function ProxyOnlyRows({ status }: { status: RelayStatus }) {
+  const t = useT();
+  const outbound = status.outbound;
+  if (!outbound?.proxy_only) return null;
+  return (<>
+    <SettingsRow label={t("Proxy-only mode on")} description={outbound.proxy !== null
+      ? t("Every connection beyond this PC goes through the proxy at {proxy}. It is set where the server starts (OVIS_OUTBOUND_PROXY_ONLY) and cannot be changed here.", { proxy: outbound.proxy })
+      : t("Every connection beyond this PC goes through its outbound proxy. It is set where the server starts (OVIS_OUTBOUND_PROXY_ONLY) and cannot be changed here.")}>{null}</SettingsRow>
+    <SettingsRow label={t("Same Wi-Fi, Tailscale and SSH off")} description={t("Turned off by proxy-only mode: phones and other PCs reach this PC through the relay only.")}>{null}</SettingsRow>
+  </>);
 }
 
 let relayAnnouncing = false;

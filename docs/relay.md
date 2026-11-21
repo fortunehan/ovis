@@ -1183,6 +1183,51 @@ plugin ([native-app.md](native-app.md#direct-on-the-same-network)); a browser st
   bind of a network address shows Windows' own firewall prompt; declining it leaves the relay as
   the only way in.
 
+## Proxy-only mode
+
+For a PC on a network that allows no direct connection out, only an HTTP proxy. Whoever starts the
+server turns it on; nothing in a browser or on a phone can turn it off, and Settings → Ovis relay
+shows it read-only.
+
+```sh
+HTTPS_PROXY=http://127.0.0.1:10060 OVIS_OUTBOUND_PROXY_ONLY=1 OVIS_RUNTIME=herdr-core bun run server
+```
+
+| Variable | Meaning |
+| --- | --- |
+| `OVIS_OUTBOUND_PROXY_ONLY=1` | the switch |
+| `HTTPS_PROXY`, then `https_proxy` | the outbound proxy: `http://host:port`, optionally `http://user:pass@host:port`. It carries every destination, `http://` ones too |
+| `NO_PROXY` / `no_proxy` | the bypass list: hosts, `.suffix`, `host:port`, IP or CIDR, `*` |
+
+- **Every connection beyond this PC goes through the proxy.** Relay traffic (the relay's control,
+  data and warm sockets, typed pairing codes, relay health probes, relay passes and the account
+  service, push to the push relay, and the relay channel that adds another PC) always does,
+  whatever `NO_PROXY` says. Everything else (telemetry, update checks and downloads, usage, voice,
+  the alert webhook, remote bundles and installers) honours `NO_PROXY`. Loopback, unix sockets,
+  the herdr and herdr-core sockets and local sidecars are never proxied.
+- **It fails closed.** A missing or malformed proxy address, or a `HOST` other than loopback, stops
+  the server at startup with the reason. A proxy that cannot be reached refuses the connection;
+  nothing is ever sent directly instead. The relay keeps retrying through the proxy with its usual
+  backoff, every refusal is logged (`outbound.refused`), `GET /api/health` says `outbound`
+  (`proxy_only`, `proxy` without credentials, `latest_refusal`), and Settings → Ovis relay says
+  why the relay is blocked ("proxy 127.0.0.1:10060 can't be reached").
+- **No local-network carrier.** Nothing listens on 7319 and no direct carrier is offered to phones,
+  LAN HTTPS is off, this PC never dials another PC's private or Tailscale address, and SSH, Tailnet
+  and address PCs are refused (`409 proxy_only`). `tailscale serve` in front of loopback still
+  works.
+- **Children too.** Processes that reach the network (git fetch for updates, `herdr update`, the
+  herdr-core download, CLI logins) get every proxy variable set to the outbound proxy.
+- **How it holds.** All of it goes through [`server/outbound.ts`](../server/outbound.ts); a
+  conventions test refuses a bare `fetch` or `new WebSocket` anywhere else in `server/` and
+  `shared/`, and in proxy-only mode the global `fetch` and `WebSocket` refuse (and log) any dial
+  beyond this PC that slipped past it. Bun applies the process's `NO_PROXY` even to a socket given
+  a proxy, so in this mode the server takes `NO_PROXY` out of its own environment and applies the
+  bypass list itself.
+
+With the switch off, a set `HTTPS_PROXY` is used as a best effort by every fetch and, given to it
+explicitly, by every WebSocket, relay ones included, and `NO_PROXY` is honoured; an unreachable
+proxy is an ordinary connection failure. With neither set nothing changes.
+
 ## Code
 
 | Path | What it does |

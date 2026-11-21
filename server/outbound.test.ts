@@ -236,7 +236,7 @@ describe("with the switch off", () => {
     const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (request, bun) => bun.upgrade(request) ? undefined : new Response("plain"), websocket: { open(socket) { socket.send("hello"); }, message() {} } });
     cleanups.push(() => server.stop(true));
     const socket = relayWebSocket(`ws://127.0.0.1:${server.port}/v1/ws`);
-    expect(await new Promise((resolve) => socket.addEventListener("message", (event) => resolve(event.data)))).toBe("hello");
+    expect(await new Promise<unknown>((resolve) => socket.addEventListener("message", (event) => resolve(event.data)))).toBe("hello");
     socket.close();
     const plain = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("plain") });
     cleanups.push(() => plain.stop(true));

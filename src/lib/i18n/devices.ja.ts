@@ -328,5 +328,11 @@ export const DEVICES_JA: Record<string, string> = {
   "This PC did not take the request. Try again.": "この PC は要求を受け付けませんでした。もう一度お試しください。",
   "Strict mode stays on until this PC finishes signing out the devices it ended. Try again shortly.": "切断したデバイスの整理がまだ終わっていないため、厳格モードはオンのままです。少ししてからもう一度お試しください。",
   "This PC is in strict mode.": "この PC は厳格モードです。",
+  "Blocked by proxy-only mode: {reason}. Retrying.": "プロキシ専用モードによりブロック中: {reason}。再試行しています。",
+  "Proxy-only mode on": "プロキシ専用モード：オン",
+  "Every connection beyond this PC goes through the proxy at {proxy}. It is set where the server starts (OVIS_OUTBOUND_PROXY_ONLY) and cannot be changed here.": "この PC の外へのすべての接続は {proxy} のプロキシを経由します。サーバーの起動時に設定され（OVIS_OUTBOUND_PROXY_ONLY）、ここでは変更できません。",
+  "Every connection beyond this PC goes through its outbound proxy. It is set where the server starts (OVIS_OUTBOUND_PROXY_ONLY) and cannot be changed here.": "この PC の外へのすべての接続は送信プロキシを経由します。サーバーの起動時に設定され（OVIS_OUTBOUND_PROXY_ONLY）、ここでは変更できません。",
+  "Same Wi-Fi, Tailscale and SSH off": "同じWi-Fi・Tailscale・SSH：オフ",
+  "Turned off by proxy-only mode: phones and other PCs reach this PC through the relay only.": "プロキシ専用モードによりオフ: スマホと他の PC はリレー経由でのみこの PC に接続します。",
   "Ask to turn strict mode off": "厳格モードのオフを依頼",
 };

@@ -329,4 +329,10 @@ export const DEVICES_ZH: Record<string, string> = {
   "Strict mode stays on until this PC finishes signing out the devices it ended. Try again shortly.": "断开的设备尚未清理完，严格模式仍保持开启。请稍后再试。",
   "This PC is in strict mode.": "这台 PC 处于严格模式。",
   "Ask to turn strict mode off": "请求关闭严格模式",
+  "Blocked by proxy-only mode: {reason}. Retrying.": "已被仅代理模式阻止：{reason}。正在重试。",
+  "Proxy-only mode on": "仅代理模式：已开启",
+  "Every connection beyond this PC goes through the proxy at {proxy}. It is set where the server starts (OVIS_OUTBOUND_PROXY_ONLY) and cannot be changed here.": "这台 PC 对外的每个连接都经过 {proxy} 的代理。它在启动服务器时设置（OVIS_OUTBOUND_PROXY_ONLY），不能在这里更改。",
+  "Every connection beyond this PC goes through its outbound proxy. It is set where the server starts (OVIS_OUTBOUND_PROXY_ONLY) and cannot be changed here.": "这台 PC 对外的每个连接都经过它的出站代理。它在启动服务器时设置（OVIS_OUTBOUND_PROXY_ONLY），不能在这里更改。",
+  "Same Wi-Fi, Tailscale and SSH off": "同一 Wi-Fi、Tailscale 和 SSH：已关闭",
+  "Turned off by proxy-only mode: phones and other PCs reach this PC through the relay only.": "已被仅代理模式关闭：手机和其他电脑只能通过中继连接这台 PC。",
 };
