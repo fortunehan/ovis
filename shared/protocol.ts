@@ -141,6 +141,7 @@ export type { DevicePairedEvent, DeviceRemovedEvent, PairingIntent, RelayPairing
  *                                          version?: string (this server's own version, package.json's, which the compiled
  *                                          binary carries from its build; authenticated only),
  *                                          security?: SecuritySummary (authenticated only, no-store),
+ *                                          outbound?: OutboundHealth (authenticated only: proxy-only mode, docs/relay.md),
  *                                          herdr_core?: HerdrCoreFacts (shared/machines.ts; authenticated only, absent until
  *                                          the server's first look for hc has ended), herdr_runtime?: HerdrRuntimeFacts (a driving owner
  *                                          only: which runtime this server serves and what Settings may switch it to),
@@ -645,6 +646,21 @@ export interface RelayStatus {
     /** false while the pass the relay holds this PC to says new client sessions to it are not allowed and the relay says it holds; absent otherwise */
     readonly new_sessions?: false;
   };
+  /**
+   * Proxy-only mode (docs/relay.md, "Proxy-only mode"), present only while it is on: the outbound proxy (`host:port`, no
+   * credentials) and, while the relay is not online, why it was last refused. Set only by the server's environment.
+   */
+  readonly outbound?: { readonly proxy_only: true; readonly proxy: string | null; readonly refusal: string | null };
+}
+
+/** `/api/health` `outbound` (server/outbound.ts): the policy, and the latest connection it refused. */
+export interface OutboundHealth {
+  readonly proxy_only: boolean;
+  /** `host:port`, never its credentials */
+  readonly proxy: string | null;
+  /** why proxy-only mode has no usable proxy; the server does not start then, so a running one says null */
+  readonly invalid: string | null;
+  readonly latest_refusal: { readonly at: string; readonly kind: "relay" | "other"; readonly target: string; readonly reason: string } | null;
 }
 
 /**

@@ -21,6 +21,7 @@ import type { AccountPairing } from "../../shared/protocol.ts";
 import { answerServerChallenge } from "../../shared/relay-server-proof.ts";
 import type { DeviceStore } from "../devices.ts";
 import type { RelayIdentity } from "./identity.ts";
+import { relayWebSocket } from "../outbound.ts";
 
 export const PAIR_CODE_ATTEMPT_MS = 20_000;
 const NAMEPLATE_TRIES = 5;
@@ -150,7 +151,7 @@ export class RelayPairCodes {
       const identity = this.options.identity();
       const pass = this.options.pass?.() ?? null;
       // Bun's WebSocket takes headers (never the URL: a pass is good for hours)
-      const connect = this.options.connect ?? ((address, extra) => new WebSocket(address, (extra ? { headers: extra } : undefined) as unknown as string[]));
+      const connect = this.options.connect ?? ((address, extra) => relayWebSocket(address, extra ? { headers: extra } : {}));
       const socket = connect(this.url(current.nameplate, identity), pass === null ? undefined : { [RELAY_PASS_HEADER]: pass });
       socket.binaryType = "arraybuffer";
       current.socket = socket;

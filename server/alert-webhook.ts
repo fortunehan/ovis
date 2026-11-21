@@ -23,6 +23,7 @@ import { isLoopbackHost } from "./access.ts";
 import { badRequest, jsonResponse, setRequestRoute } from "./http.ts";
 import { writePrivateState } from "./private-state.ts";
 import { RELAY_ORIGIN } from "./relay/session.ts";
+import { outboundFetch } from "./outbound.ts";
 
 const FILE = "alert-webhook.json";
 const TIMEOUT_MS = 10_000;
@@ -194,7 +195,7 @@ export function createAlertWebhook(options: AlertWebhookOptions): AlertWebhook {
     const { url, init } = buildPost(target, alert, options.telegramApi);
     try {
       // a webhook answers, it never redirects: following one would post the alert somewhere else
-      const response = await fetch(url, { ...init, redirect: "error", signal: AbortSignal.timeout(TIMEOUT_MS) });
+      const response = await outboundFetch(url, { ...init, redirect: "error", signal: AbortSignal.timeout(TIMEOUT_MS) });
       await response.body?.cancel().catch(() => {});
       if (response.ok) return { ok: true };
       return { ok: false, error: `HTTP ${response.status}`, retry: response.status === 429 || response.status >= 500 };

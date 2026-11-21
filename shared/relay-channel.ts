@@ -105,7 +105,8 @@ export interface RelaySocket {
 }
 export interface RelayChannelOptions {
   readonly store: RelayDeviceStore;
-  readonly socket?: (url: string) => RelaySocket;
+  /** Opens each socket: the browser's WebSocket in the app, the server's outbound module (server/outbound.ts) on a PC. */
+  readonly socket: (url: string) => RelaySocket;
   readonly label?: string;
   readonly signal?: AbortSignal;
   readonly onClose?: (error: Error) => void;
@@ -203,7 +204,7 @@ export async function openRelayChannel(offer: RelayOffer, options: RelayChannelO
   const device = await getDevice(offer, store, options.label, options.accountKey);
   if (direct !== undefined && device.device_id === null) throw new DirectCarrierUnusableError();
   options.signal?.throwIfAborted();
-  const socket = (options.socket ?? ((address) => new WebSocket(address)))(url.href);
+  const socket = options.socket(url.href);
   socket.binaryType = "arraybuffer";
   return new Promise<RelayChannel>((resolve, reject) => {
     let phase: "assigned" | "handshake" | "welcome" | "pair" | "auth" | "ready" | "closed" = "assigned";

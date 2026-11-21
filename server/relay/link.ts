@@ -11,6 +11,7 @@ import { bytesToHex } from "@noble/hashes/utils.js";
 import { answerServerChallenge, PERMANENT_SERVER_PROOF_REFUSALS, SERVER_PROOF_CLOSE } from "../../shared/relay-server-proof.ts";
 import { RELAY_PASS_CLOSE, RELAY_PASS_HEADER, parseRelayPass, relayPassAdmitsNewSessions } from "../../shared/relay-pass.ts";
 import { SignedInSessions } from "./admissions.ts";
+import { relayWebSocket } from "../outbound.ts";
 import type { RelayErrorCode } from "../../shared/protocol.ts";
 
 export type LinkErrorCode = Extract<RelayErrorCode, "relay_unreachable" | "server_key_refused" | "pass_required">;
@@ -142,7 +143,7 @@ export class RelayLink {
     if (!connectionId && !warm) this.controlPass = pass;
     const headers = pass === null ? undefined : { [RELAY_PASS_HEADER]: pass };
     // Bun's WebSocket takes headers (never the URL: a pass is good for hours)
-    return (this.options.connect ?? ((address, extra) => new WebSocket(address, (extra ? { headers: extra } : undefined) as unknown as string[])))(url.href, headers);
+    return (this.options.connect ?? ((address, extra) => relayWebSocket(address, extra ? { headers: extra } : {})))(url.href, headers);
   }
 
   /**

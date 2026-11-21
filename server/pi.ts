@@ -14,6 +14,7 @@ import { piAgentDir } from "./pi-models.ts";
 import { authorizedTranscript, unwrittenSession } from "./transcript-store.ts";
 import { source as piCatalog } from "./skills/pi.ts";
 import { userHome } from "./user-home.ts";
+import { localFetch } from "./outbound.ts";
 export { transcriptInStore as piTranscriptInStore, unwrittenSession } from "./transcript-store.ts";
 
 /**
@@ -111,7 +112,7 @@ const STATE_READ_MS = 1_000;
 export async function bridgeState(socket: string, signal?: AbortSignal): Promise<PiAskBridgeState | null> {
   try {
     const timeout = AbortSignal.timeout(STATE_READ_MS);
-    const response = await fetch("http://localhost/v1/state", { unix: socket, signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
+    const response = await localFetch("http://localhost/v1/state", { unix: socket, signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
     if (!response.ok) return null;
     const state = await response.json() as PiAskBridgeState;
     return typeof state === "object" && state !== null && state.version === 1 && Array.isArray(state.flows) ? state : null;
@@ -173,7 +174,7 @@ export async function piExtensionCommands(
   let rows: SlashCommand[];
   try {
     const timeout = AbortSignal.timeout(STATE_READ_MS);
-    const response = await fetch("http://localhost/v1/commands", { unix: socket, signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
+    const response = await localFetch("http://localhost/v1/commands", { unix: socket, signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
     if (!response.ok) return null;
     const reply = await response.json() as Partial<PiBridgeCommands> | null;
     if (reply?.version !== 1 || reply.pid !== pi.pid || !Array.isArray(reply.commands)) return null;

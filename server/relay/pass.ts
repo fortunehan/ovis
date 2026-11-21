@@ -14,6 +14,7 @@ import { answerServerChallenge } from "../../shared/relay-server-proof.ts";
 import { isJsonObject } from "../http.ts";
 import { writePrivateState } from "../private-state.ts";
 import type { RelayIdentity } from "./identity.ts";
+import { relayFetch } from "../outbound.ts";
 
 export type RelayPassState = "ok" | "no_account" | "not_listed" | "limit" | "unavailable";
 
@@ -193,7 +194,7 @@ export class RelayPassKeeper {
       this.schedule(WAIT_ACCOUNT_MS);
       return;
     }
-    const fetcher = this.options.fetch ?? ((request: Request) => fetch(request));
+    const fetcher = this.options.fetch ?? ((request: Request) => relayFetch(request));
     const inflight = new AbortController();
     this.inflight = inflight;
     const signal = AbortSignal.any([inflight.signal, AbortSignal.timeout(REQUEST_MS)]);

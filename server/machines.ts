@@ -45,6 +45,7 @@ import { deriveServerId } from "../shared/relay-server-proof.ts";
 import { validateOffer } from "../shared/relay-offer.ts";
 import type { HcMachine, MachineBridge } from "./herdr-core/machine-bridge.ts";
 import { addressBootId, addressOrigin, AddressPcError, AddressPcRefused, checkAddressTarget, loadAddressPcToken, openAddressPcForward, pairAddressPc, removeAddressPcToken, saveAddressPcToken, type AddressPcForward } from "./address-pc.ts";
+import { assertLocalNetworkAllowed, LocalNetworkOffError, outboundFetch, proxyOnly, relayWebSocket } from "./outbound.ts";
 
 /** a PC keeps the six-digit code in its offer for 10 minutes at most (server/devices.ts) */
 const RELAY_FOUND_MS = 10 * 60_000;
@@ -837,6 +838,7 @@ export class MachineManager {
   }
   install(request: PcInstallRequest, shown?: string): PcInstallJob {
     if (this.stopped) throw new Error("Server stopping");
+    assertLocalNetworkAllowed("SSH PCs");
     const name = "name" in request ? request.name : undefined;
     if (name !== undefined && (typeof name !== "string" || name.length > 100)) throw new Error("PC name must be at most 100 characters");
     if (request.machine_id !== undefined) {
@@ -1065,6 +1067,7 @@ export class MachineManager {
   }
   setup(request: SetupRequest, options: { auto?: boolean; expectedRevision?: string; keysOnly?: boolean; fromInstall?: boolean } = {}): SetupJob {
     if (this.stopped) throw new Error("Server stopping");
+    assertLocalNetworkAllowed("SSH PCs");
     let target = validateTarget(request);
     if (!options.fromInstall && (this.installer.runningAt(target) || request.machine_id && this.installer.runningFor(request.machine_id))) throw new Error("Ovis is being installed on this PC; wait for it to finish, or cancel it.")
     const existing = request.machine_id ? this.machines.get(request.machine_id) : undefined;
@@ -1708,7 +1711,7 @@ export class MachineManager {
   private async ownOffer(ssh: SshConnection, descriptor: BridgeDescriptor, target: SshTarget, signal?: AbortSignal): Promise<RemoteOvis & { revision?: string; fix?: InstallPlan["mode"] }> {
     const endpoint = await this.tunnel(ssh, descriptor);
     // never followed: a redirect would leave the tunnel for wherever it names, this PC's own loopback included
-    const get = (path: string) => fetch(endpoint.url + path, { headers: { authorization: `Bearer ${endpoint.token}` }, redirect: "manual",
+    const get = (path: string) => outboundFetch(endpoint.url + path, { headers: { authorization: `Bearer ${endpoint.token}` }, redirect: "manual",
       signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(BRIDGE_ANSWER_MS)]) : AbortSignal.timeout(BRIDGE_ANSWER_MS) });
     let port = descriptor.port;
     let url: string | null = null;
@@ -1775,7 +1778,7 @@ export class MachineManager {
     const to = offer.latest_version ? ` to v${offer.latest_version}` : "";
     this.stage(job, "installing", `Asking this PC's own Ovis to update itself${to}…`);
     const endpoint = await this.tunnel(ssh, descriptor);
-    const updates = (install?: string) => fetch(`${endpoint.url}/api/updates${install ? "/install" : ""}`, {
+    const updates = (install?: string) => outboundFetch(`${endpoint.url}/api/updates${install ? "/install" : ""}`, {
       ...(install ? { method: "POST", body: JSON.stringify({ expected_revision: install }) } : {}),
       headers: { authorization: `Bearer ${endpoint.token}`, "x-herdr-update": "1", ...(install ? { "content-type": "application/json" } : {}) },
       // never followed: a redirect would take the install request out of the tunnel, to this PC's own loopback too
@@ -1855,7 +1858,7 @@ export class MachineManager {
     let response: Response;
     // one deadline for the answer, its body included: a bridge that stops halfway timed out too
     const deadline = AbortSignal.timeout(BRIDGE_ANSWER_MS);
-    try { response = await fetch(`${endpoint.url}/api/bridge${discover ? "?discover=herdr" : ""}`, { headers: { authorization: `Bearer ${endpoint.token}` }, signal: deadline, redirect: "manual" }); }
+    try { response = await outboundFetch(`${endpoint.url}/api/bridge${discover ? "?discover=herdr" : ""}`, { headers: { authorization: `Bearer ${endpoint.token}` }, signal: deadline, redirect: "manual" }); }
     catch (error) { throw new Error(bridgeUnreachable(descriptor, error), { cause: error }); }
     if (!response.ok) throw new Error(verificationFailure(response.status, await readCappedJson(response, REMOTE_LIMITS.bridgeError).catch(() => null)));
     let identity: BridgeIdentity;
@@ -1885,7 +1888,7 @@ export class MachineManager {
   }
   private async readRelayHerdr(runtime: Runtime, endpoint: { url: string; token: string }, generation: number): Promise<void> {
     try {
-      const r = await fetch(endpoint.url + "/api/health", { headers: { authorization: `Bearer ${endpoint.token}` }, signal: AbortSignal.timeout(15_000) });
+      const r = await outboundFetch(endpoint.url + "/api/health", { headers: { authorization: `Bearer ${endpoint.token}` }, signal: AbortSignal.timeout(15_000) });
       if (!r.ok) { await discard(r); return; }
       const { herdr } = await readCappedJson<{ herdr?: HerdrIdentity }>(r, REMOTE_LIMITS.health);
       if (generation !== runtime.generation || this.stopped) return;
@@ -1907,7 +1910,7 @@ export class MachineManager {
         runtime.refreshQueued = false;
         const revision = runtime.snapshotRevision;
         try {
-          const r = await fetch(endpoint.url + "/api/session", { headers: { authorization: `Bearer ${endpoint.token}` }, signal: AbortSignal.timeout(15_000) });
+          const r = await outboundFetch(endpoint.url + "/api/session", { headers: { authorization: `Bearer ${endpoint.token}` }, signal: AbortSignal.timeout(15_000) });
           if (!r.ok) { await discard(r); throw new Error(`Remote herdr unavailable (${r.status})`); }
           const { snapshot } = await readCappedJson<{ snapshot: SessionSnapshot }>(r, REMOTE_LIMITS.sessionSnapshot);
           if (generation !== runtime.generation || this.stopped) return;
@@ -2013,7 +2016,7 @@ export class MachineManager {
     this.disconnect(runtime);
     runtime.machine.error = error instanceof Error ? error.message : String(error);
     // the other PC turned this one away for good (revoked it, say): trying again could only fail the same way
-    if (error instanceof RelayPcRefused || error instanceof AddressPcRefused) {
+    if (error instanceof RelayPcRefused || error instanceof AddressPcRefused || error instanceof LocalNetworkOffError) {
       runtime.machine.state = "error"; runtime.machine.action_required = null;
       this.emit();
       return;
@@ -2085,6 +2088,7 @@ export class MachineManager {
     if (runtime.machine.kind === "address") {
       try {
         delete runtime.machine.herdr;
+        assertLocalNetworkAllowed("PCs added by their address");
         await checkAddressTarget(runtime.machine.address!);
         if (generation !== runtime.generation || this.stopped) return;
         runtime.forward = openAddressPcForward(runtime.machine.address!, loadAddressPcToken(this.addressTokenPath(runtime.machine.id)), (error) => this.lost(runtime, generation, error));
@@ -2093,6 +2097,7 @@ export class MachineManager {
       } catch (e) { this.lost(runtime, generation, e); }
       return;
     }
+    if (proxyOnly()) { this.lost(runtime, generation, new LocalNetworkOffError("SSH PCs")); return; }
     runtime.ssh = new SshConnection(runtime.machine.target!, this.sshDir, join(this.sshDir, runtime.machine.id));
     try {
       await runtime.ssh.start(); await this.prepare(runtime);
@@ -2156,7 +2161,7 @@ export class MachineManager {
     runtime.verification = call;
     call.promise = (async () => {
       try {
-        const response = await fetch(`${endpoint.url}/api/health`, { headers: { authorization: `Bearer ${endpoint.token}` }, signal: AbortSignal.any([abort.signal, AbortSignal.timeout(15_000)]) });
+        const response = await outboundFetch(`${endpoint.url}/api/health`, { headers: { authorization: `Bearer ${endpoint.token}` }, signal: AbortSignal.any([abort.signal, AbortSignal.timeout(15_000)]) });
         if (!current() || !response.ok) { await discard(response); return null; }
         const webUi = (await readCappedJson<{ web_ui?: { boot_id?: unknown; server_id?: unknown } } | null>(response, REMOTE_LIMITS.health))?.web_ui;
         const boot = webUi?.boot_id;
@@ -2259,6 +2264,7 @@ export class MachineManager {
    */
   async addAddress(address: unknown, code: unknown, name?: unknown): Promise<Machine> {
     if (this.stopped) throw new Error("Server stopping");
+    assertLocalNetworkAllowed("PCs added by their address");
     const origin = addressOrigin(address);
     if (typeof code !== "string" || !/^\d{6}$/.test(code.trim())) throw new AddressPcError("code");
     if (name !== undefined && (typeof name !== "string" || !name.trim() || name.length > 100)) throw new Error("Enter a PC name (1–100 characters)");
@@ -2301,7 +2307,7 @@ export class MachineManager {
   async relayFoundByCode(code: unknown, signal?: AbortSignal): Promise<{ ticket: string; server_id: string; name: string | null }> {
     if (this.stopped) throw new Error("Server stopping");
     if (typeof code !== "string" || code.length > 64) throw new TypedCodeError("not-a-code");
-    const offer = await offerFromCode(code, { ...(this.relaySocket ? { connect: this.relaySocket } : {}), ...(signal ? { signal } : {}) });
+    const offer = await offerFromCode(code, { connect: this.relaySocket ?? ((url: string) => relayWebSocket(url) as unknown as RelaySocket), ...(signal ? { signal } : {}) });
     if (this.stopped) throw new Error("Server stopping");
     const now = this.now();
     for (const [ticket, held] of this.foundByCode) if (now - held.at > RELAY_FOUND_MS) this.foundByCode.delete(ticket);
@@ -2316,11 +2322,11 @@ export class MachineManager {
   }
 
   listSshCandidates() {
-    return sshCandidates(this.sshCandidateOptions);
+    return proxyOnly() ? Promise.resolve([]) : sshCandidates(this.sshCandidateOptions);
   }
 
   listTailnet() {
-    return this.tailnet.list(this.relayServerIds());
+    return proxyOnly() ? Promise.resolve([]) : this.tailnet.list(this.relayServerIds());
   }
 
   /**
@@ -2329,6 +2335,7 @@ export class MachineManager {
    * code typed by hand. A code left unspent ends at its own expiry: cancelling it could end a newer one that PC shows.
    */
   async addTailnet(url: unknown): Promise<Machine> {
+    assertLocalNetworkAllowed("Tailnet PCs");
     const name = this.tailnet.foundAt(url);
     if (name === null) throw new TailnetPcError("not_found", "That PC is not among those found on Tailscale. Look again.");
     const asked = await this.tailnet.code(url as string, this.relayServerIds());

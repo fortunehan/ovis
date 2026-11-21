@@ -3,6 +3,7 @@ import type { MoveUnavailable } from "../shared/runtime-move.ts";
 import { isJsonObject } from "./http.ts";
 import type { MachineManager } from "./machines.ts";
 import { discard, parseJson, readCapped, REMOTE_LIMITS } from "./remote-json.ts";
+import { outboundFetch } from "./outbound.ts";
 
 export const PC_MOVE_PATH = /^runtime\/move(?:\/(?:stop|stop-all|install))?$/;
 export const PC_UPDATE_REQUIRED = "Update Ovis on that PC first, then move it.";
@@ -48,7 +49,7 @@ function moveSummary(status: Record<string, unknown>): PcMoveStatus | null {
  * did not answer now (herdr away, a timeout), so the badge it had stays.
  */
 export async function readMoveOffer(endpoint: { url: string; token: string }): Promise<PcMoveOffer | null | undefined> {
-  const response = await fetch(`${endpoint.url}/api/runtime/move`, { headers: { authorization: `Bearer ${endpoint.token}` }, redirect: "error", signal: AbortSignal.timeout(30_000) });
+  const response = await outboundFetch(`${endpoint.url}/api/runtime/move`, { headers: { authorization: `Bearer ${endpoint.token}` }, redirect: "error", signal: AbortSignal.timeout(30_000) });
   if (!response.ok) {
     const code = answerCode(await readCapped(response, REMOTE_LIMITS.bridgeError).catch(() => null));
     const cannotTell = response.status === 401 || response.status === 403 || response.status === 404 && code === "not_found" || response.status === 409 && code === "runtime_locked";
@@ -73,7 +74,7 @@ async function startMove(manager: MachineManager, id: string, revision: string):
   if (!endpoint) return { outcome: "refused", code: "machine_offline", message: "This PC is disconnected." };
   let response: Response;
   try {
-    response = await fetch(`${endpoint.url}/api/runtime/move`, {
+    response = await outboundFetch(`${endpoint.url}/api/runtime/move`, {
       method: "POST", body: JSON.stringify({ revision }), redirect: "error", signal: AbortSignal.timeout(75_000),
       headers: { authorization: `Bearer ${endpoint.token}`, "content-type": "application/json", "x-herdr-update": "1" },
     });

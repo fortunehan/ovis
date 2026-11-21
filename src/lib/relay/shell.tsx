@@ -862,7 +862,7 @@ export async function mountRelayShell(mount: RelayShellMount): Promise<void> {
     if (shown?.kind !== "code-entry") return;
     const controller = new AbortController(); opening = controller; codeOffer = null;
     show({ kind: "code-looking" });
-    findByCode(input, { signal: controller.signal }).then((offer) => {
+    findByCode(input, { signal: controller.signal, connect: (address) => new WebSocket(address) }).then((offer) => {
       if (controller.signal.aborted) return;
       codeOffer = offer; show({ kind: "code-compare", offer });
     }, (error: unknown) => { if (!controller.signal.aborted) show({ kind: "code-entry", failure: error instanceof TypedCodeError ? error.failure : "unreachable" }); });

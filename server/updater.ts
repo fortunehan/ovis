@@ -5,6 +5,7 @@ import { CHECKOUT_CHANGED_REASON, noInstalledNotes, readUpdateChannel, type Upda
 import { compareVersions, releaseNotes, releaseSummaries, SUMMARIES_FILE } from "./release-notes.ts";
 import { releaseVersion } from "./pc-update.ts";
 import { releaseIn } from "./update-state.ts";
+import { networkEnv } from "./outbound.ts";
 
 export interface Release {
   directory: string; revision: string; source_revision: string;
@@ -122,7 +123,7 @@ export function runCommand(cwd: string, argv: string[], signal?: AbortSignal, ti
   return new Promise((resolve, reject) => {
     const child = spawn(argv[0]!, argv.slice(1), {
       cwd, detached: true, windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" },
+      env: { ...networkEnv(), GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" },
     });
     let output = "", errors = "", failure: string | null = null;
     let killTimer: ReturnType<typeof setTimeout> | null = null;
@@ -424,11 +425,11 @@ export class Updater {
    * exit after the connection dropped), so what it added to the pack directory is removed
    * here, on every OS — Windows cannot signal a process group at all, and any kill path can
    * be too late anyway (#1252). */
-  private async fetchInto(fetch: () => Promise<string>): Promise<string> {
+  private async fetchInto(download: () => Promise<string>): Promise<string> {
     const packDir = await this.packDir();
     sweepStaleTmpPacks(packDir);
     const held = tmpPacks(packDir);
-    try { return await fetch(); }
+    try { return await download(); }
     catch (error) {
       // another git's lock: its in-progress pack is not ours to remove; anything it abandons is
       // swept once stale
