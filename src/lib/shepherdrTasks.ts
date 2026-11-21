@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import type { ShepherdrTasks } from "../../shared/shepherdr-tasks.ts";
 import { LOCAL_MACHINE, type Machine } from "../../shared/machines.ts";
 
@@ -26,6 +26,13 @@ export function subscribeShepherdrTasks(listener: () => void): () => void {
 
 export function useShepherdrTasks(): ShepherdrTasks | null {
   return useSyncExternalStore(subscribeShepherdrTasks, currentShepherdrTasks, () => null);
+}
+
+/** The PCs the workspace list, the agent list and the Inbox draw (withoutTaskTerminals), and Shepherdr's Needs you count for the drawer button. */
+export function useTaskListedMachines<T extends Pick<Machine, "id" | "snapshot">>(machines: readonly T[]): { machines: T[]; needs: number } {
+  const tasks = useShepherdrTasks();
+  const listed = useMemo(() => withoutTaskTerminals(machines, tasks), [machines, tasks]);
+  return { machines: listed, needs: tasks?.needs ?? 0 };
 }
 
 /** The terminals of the rows the Tasks section shows (a task's agent, helpers and reviewers): reached only from there. */

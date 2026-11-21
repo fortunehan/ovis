@@ -151,8 +151,8 @@ describe("following the feed", () => {
     };
     return { paths, asked, sentToken: () => token, fetch };
   }
-  const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-  const until = async (done: () => boolean) => { for (let i = 0; i < 200 && !done(); i++) await wait(5); };
+
+  const until = async (done: () => boolean) => { const deadline = Date.now() + 5_000; while (!done()) { if (Date.now() > deadline) throw new Error("the feed never got there"); await Bun.sleep(5); } };
 
   it("reads the feed with the token once health answers the service file's id, and keeps a dropped feed's list a while", async () => {
     const seen: Array<{ at: number | null; stale: boolean }> = [];
@@ -172,7 +172,7 @@ describe("following the feed", () => {
     const feed = new ShepherdrFeed({ paths, fetch, retryMs: [60_000], onDoc: (got) => seen.push(got) });
     feed.start();
     await until(() => asked.length >= 1);
-    await wait(20);
+    await Bun.sleep(20); // fixed wait: proving nothing more is asked after the refusal
     feed.stop();
     expect(asked).toEqual(["http://127.0.0.1:7788/api/health"]);
     expect(sentToken()).toBe(false);
@@ -184,7 +184,7 @@ describe("following the feed", () => {
     const feed = new ShepherdrFeed({ paths, fetch, retryMs: [60_000], onDoc: () => {} });
     feed.start();
     await until(() => asked.length >= 1);
-    await wait(20);
+    await Bun.sleep(20); // fixed wait: proving nothing more is asked after the refusal
     feed.stop();
     expect(asked).toEqual(["http://127.0.0.1:7788/api/health"]);
   });
@@ -204,7 +204,7 @@ describe("following the feed", () => {
     const dir = tempDir();
     const feed = new ShepherdrFeed({ paths: { serviceFile: join(dir, "none.json"), tokenFile: join(dir, "token"), tasksDir: dir }, fetch: async (url) => { asked.push(url); return new Response(); }, retryMs: [60_000], onDoc: () => {} });
     feed.start();
-    await wait(20);
+    await Bun.sleep(20); // fixed wait: proving nothing more is asked after the refusal
     feed.stop();
     expect(asked).toEqual([]);
   });

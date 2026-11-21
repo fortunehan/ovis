@@ -15,12 +15,9 @@ function readFolded(): string[] {
   } catch { return []; }
 }
 
-/** The drawer button's count: Shepherdr's own Needs you, apart from the Inbox. */
-export function useTasksBadge(): { count: number; label: string | null } {
-  const t = useT();
-  const tasks = useShepherdrTasks();
-  const count = tasks?.needs ?? 0;
-  return { count, label: count > 0 ? t("Tasks: {count} need you", { count }) : null };
+/** What the drawer button says of Shepherdr's own Needs you count, apart from the Inbox. */
+export function tasksBadgeLabel(t: ReturnType<typeof useT>, count: number): string {
+  return t("Tasks: {count} need you", { count });
 }
 
 /**

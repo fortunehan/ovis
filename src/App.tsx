@@ -157,8 +157,8 @@ import { inboxOrder } from "./lib/agentInbox.ts";
 import { layoutCells } from "./lib/layoutMap.ts";
 import { pageStartsInInbox, useInboxMode } from "./lib/inboxMode.ts";
 import { InboxList } from "./components/InboxList.tsx";
-import { TasksSection, useTasksBadge } from "./components/TasksSection.tsx";
-import { useShepherdrTasks, withoutTaskTerminals } from "./lib/shepherdrTasks.ts";
+import { TasksSection, tasksBadgeLabel } from "./components/TasksSection.tsx";
+import { useTaskListedMachines } from "./lib/shepherdrTasks.ts";
 import { InboxConnecting, InboxFootEntry, InboxUnchosen, ThreadTitle, ThreadTop } from "./components/InboxMode.tsx";
 import { InboxRail } from "./components/InboxRail.tsx";
 import { OvisMark } from "./components/OvisMark.tsx";
@@ -731,10 +731,8 @@ export function App() {
 
   useMachineGone({ machines, pendingLink, pendingFile, pendingCreate, selectedMachineRef, linkSince, selectionSince, rosterSeq, setLinkLanded, setHeaderNote, selectTargetRef, rosterTick, linkTick });
   const shownPcs = useShownMachines({ machines, selectedMachineRef, selectTargetRef, picks, restored: !linkSelects(initialLink) });
-  const shepherdrTasks = useShepherdrTasks();
   // a task the Tasks section lists is reached from there: its terminals leave the workspace list, the agent list and the Inbox
-  const sidebarMachines = useMemo(() => withoutTaskTerminals(shownPcs, shepherdrTasks), [shownPcs, shepherdrTasks]);
-  const tasksBadge = useTasksBadge();
+  const { machines: sidebarMachines, needs: tasksNeedYou } = useTaskListedMachines(shownPcs);
   const waitingRosters = useWaitingRosters(sidebarMachines, machines.find((machine) => machine.id === selectedMachineId), activity.status);
   const sessionTally = sessionCountsAcross(waitingRosters);
   const nextWaiting = nextWaitingTarget(waitingRosters, { machineId: selectedMachineId, paneId: selectedPaneId });
@@ -939,7 +937,7 @@ export function App() {
             type="button"
             id="drawer-toggle"
             className={`icon-button drawer-toggle${markInDrawer ? " is-mark" : ""}`}
-            aria-label={`${t(markInDrawer ? "Open agent inbox" : drawerOpen ? "Close workspace list" : "Open workspace list")}${tasksBadge.label ? ` · ${tasksBadge.label}` : ""}`}
+            aria-label={`${t(markInDrawer ? "Open agent inbox" : drawerOpen ? "Close workspace list" : "Open workspace list")}${tasksNeedYou > 0 ? ` · ${tasksBadgeLabel(t, tasksNeedYou)}` : ""}`}
             title={markInDrawer ? t("Open agent inbox") : undefined}
             aria-haspopup={markInDrawer ? undefined : "dialog"}
             aria-expanded={markInDrawer ? undefined : drawerOpen}
@@ -952,7 +950,7 @@ export function App() {
             }}
           >
             {markInDrawer ? <OvisMark width="22" height="22" /> : drawerOpen ? <X /> : <Menu />}
-            {tasksBadge.count > 0 && !drawerOpen && <span className="header-more-dot is-waiting" data-count={tasksBadge.count} aria-hidden="true" />}
+            {tasksNeedYou > 0 && !drawerOpen && <span className="header-more-dot is-waiting" data-count={tasksNeedYou} aria-hidden="true" />}
           </button>}
           {!inMode && wideScreen && !sidebarCollapsed && settings.sidebarRows !== "two" && <button type="button" className="icon-button new-workspace-button" disabled={auth?.role === "watch" || selectedMachine?.state !== "connected"} aria-label={t("New workspace")} title={auth?.role === "watch" ? `${t("New workspace")} · ${t("View only")}` : t("New workspace")} onClick={() => { actions.counted?.("new_workspace", "button"); actions.openNewSession(); }}>
             <Plus aria-hidden="true" />

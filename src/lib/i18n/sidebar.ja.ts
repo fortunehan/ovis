@@ -1,7 +1,7 @@
 /**
  * Japanese for the keys only the sidebar files use:
  * components/Sidebar.tsx, components/AgentSidebar.tsx, components/SidebarResizer.tsx,
- * components/SidebarSplit.tsx, components/InboxList.tsx, lib/inboxRow.ts.
+ * components/SidebarSplit.tsx, components/InboxList.tsx, lib/inboxRow.ts, components/TasksSection.tsx.
  * Register and fixed terms follow ../i18n.ja.ts; a key another feature also uses goes there.
  */
 export const SIDEBAR_JA: Record<string, string> = {
