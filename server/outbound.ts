@@ -51,9 +51,13 @@ export class OutboundRefusedError extends Error {
   }
 }
 
-/** Kept before any guard replaces the globals: this module alone dials with them. */
+/** Kept before any guard replaces the globals: while the guard is in place, this module alone dials with them. */
 const nativeFetch: typeof fetch = globalThis.fetch;
 const NativeWebSocket: typeof WebSocket = globalThis.WebSocket;
+let guarded = false;
+/** The globals as they are now (a test's spy included), the originals only behind this module's own guard. */
+const dialFetch = (): typeof fetch => guarded ? nativeFetch : globalThis.fetch;
+const dialSocket = (): typeof WebSocket => guarded ? NativeWebSocket : globalThis.WebSocket;
 
 const PROXY_NAMES = ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"] as const;
 
@@ -236,12 +240,12 @@ type FetchInit = RequestInit & { unix?: string; proxy?: string };
 
 /** A connection beyond this machine: through the outbound proxy as the policy says. */
 export async function outboundFetch(input: string | URL | Request, init?: FetchInit, kind: OutboundKind = "other"): Promise<Response> {
-  if (init?.unix !== undefined) return nativeFetch(input, init);
+  if (init?.unix !== undefined) return dialFetch()(input, init);
   const url = urlOf(input);
   const proxy = route(url, kind, false);
-  if (proxy === undefined || proxy === null) return direct(() => nativeFetch(input, init));
+  if (proxy === undefined || proxy === null) return direct(() => dialFetch()(input, init));
   try {
-    const response = await proxied(() => nativeFetch(input, { ...init, proxy }));
+    const response = await proxied(() => dialFetch()(input, { ...init, proxy }));
     if (kind === "relay") latestRelayRefusal = null;
     return response;
   } catch (error) {
@@ -261,7 +265,7 @@ export function outboundWebSocket(address: string, init: { headers?: Record<stri
   const url = new URL(address);
   const proxy = route(url, kind, true);
   const options = { ...init, ...(proxy ? { proxy } : {}) };
-  const open = () => new NativeWebSocket(address, (Object.keys(options).length > 0 ? options : undefined) as unknown as string[]);
+  const open = () => new (dialSocket())(address, (Object.keys(options).length > 0 ? options : undefined) as unknown as string[]);
   const socket = proxy ? proxied(open) : open();
   if (proxy && policy.proxyOnly) {
     let opened = false;
@@ -283,12 +287,12 @@ function assertLocal(url: URL, unix: boolean): void {
 /** This machine only (loopback or a unix socket): never proxied, and refused for anything else. */
 export function localFetch(input: string | URL | Request, init?: FetchInit): Promise<Response> {
   assertLocal(urlOf(input), init?.unix !== undefined);
-  return direct(() => nativeFetch(input, init));
+  return direct(() => dialFetch()(input, init));
 }
 
 export function localWebSocket(address: string, init?: { headers?: Record<string, string> }): WebSocket {
   assertLocal(new URL(address), false);
-  return new NativeWebSocket(address, init as unknown as string[]);
+  return new (dialSocket())(address, init as unknown as string[]);
 }
 
 /**
@@ -297,7 +301,7 @@ export function localWebSocket(address: string, init?: { headers?: Record<string
  */
 export function localNetworkWebSocket(address: string): WebSocket {
   if (policy.proxyOnly) throw refuse("other", new URL(address), "local-network carriers are turned off by proxy-only mode");
-  return new NativeWebSocket(address);
+  return new (dialSocket())(address);
 }
 
 /**
@@ -370,9 +374,11 @@ export function installOutboundGuard(): () => void {
       super(address, options as string[]);
     }
   }
+  guarded = true;
   globalThis.fetch = guardedFetch;
   globalThis.WebSocket = GuardedWebSocket as typeof WebSocket;
   return () => {
+    guarded = false;
     globalThis.fetch = nativeFetch;
     globalThis.WebSocket = NativeWebSocket;
   };
