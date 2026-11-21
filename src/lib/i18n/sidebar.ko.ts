@@ -92,4 +92,9 @@ export const SIDEBAR_KO: Record<string, string> = {
   "No terminal running": "실행 중인 터미널 없음",
   "On {machine}, can't be opened from this PC": "{machine}에서 실행 중이라 이 PC에서 열 수 없음",
   "On another machine, can't be opened from this PC": "다른 기기에서 실행 중이라 이 PC에서 열 수 없음",
+  "Accept": "수락",
+  "Accept {title}?": "{title}을(를) 수락할까요?",
+  "Accepting finishes this task and merges its work.": "수락하면 이 작업이 끝나고 변경 사항이 병합됩니다.",
+  "Other answer": "기타 답변",
+  "Send answer": "답변 보내기",
 };

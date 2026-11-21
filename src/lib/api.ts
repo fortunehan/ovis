@@ -1,4 +1,5 @@
 import { apiFetch } from "./api-request-id.ts";
+import type { ShepherdrActionRequest } from "../../shared/shepherdr-tasks.ts";
 import { CompactAgentsError, expandMachine, type WireMachine } from "../../shared/compact-agents.ts";
 import type { PreferencesChange, SharedPreferences } from "../../shared/preferences.ts";
 import type { AlertWebhookSave, AlertWebhookView } from "../../shared/alert-webhook.ts";
@@ -1540,4 +1541,9 @@ export async function saveVoiceConfig(update: VoiceConfigUpdate): Promise<VoiceS
   const response = await apiFetch("/api/voice/config", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(update) });
   if (!response.ok) throw await errorFrom("/api/voice/config", response);
   return (await response.json()) as VoiceStatus;
+}
+
+/** POST /api/shepherdr/action: a Tasks section row's Accept or answer, passed on to Shepherdr by this server. */
+export async function sendShepherdrAction(request: ShepherdrActionRequest): Promise<void> {
+  await sendJson("/api/shepherdr/action", "POST", request);
 }

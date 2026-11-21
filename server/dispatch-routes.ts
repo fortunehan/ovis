@@ -21,6 +21,7 @@ export const LOCAL_DRIVE_POSTS: readonly string[] = [
   "agent/rename", "sessions/resume", "plugin/action", "seen", "connection-diagnostics",
   "agent-catalog/install", "agent-catalog/sign-in", "usage/statusline", "usage/login", "usage/login/code",
   "usage/login/cancel", "usage/accounts", "cliproxy/login", "cliproxy/callback", "voice/transcribe", "telemetry",
+  "shepherdr/action",
 ].map(path => `/api/${path}`);
 
 export const DISPATCH_MUTATIONS = {

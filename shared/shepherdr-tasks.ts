@@ -70,3 +70,16 @@ export interface ShepherdrTasksEvent {
   type: "shepherdr-tasks";
   tasks?: ShepherdrTasks;
 }
+
+/**
+ * POST /api/shepherdr/action: acting on a row the Tasks section shows, by its `key`. The server builds Shepherdr's own
+ * action from that row as the feed offers it (its `accept`, one of its `answer.choices`, or free words where
+ * `answer.other`) and passes it to the Shepherdr service on its PC; the client never talks to Shepherdr.
+ */
+export type ShepherdrActionRequest =
+  | { key: string; accept: true }
+  | { key: string; choice: number }
+  | { key: string; other: string };
+
+/** The most free words an Other answer carries (Shepherdr keeps 4000). */
+export const SHEPHERDR_OTHER_MAX = 4000;

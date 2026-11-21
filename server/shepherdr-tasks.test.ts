@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { autoPrefix, readGlance, readTaskIdentities, shepherdrPaths, sseEvents, ShepherdrFeed, tasksOf, type GlanceDoc, type ShepherdrPaths, type TerminalFacts } from "./shepherdr-tasks.ts";
+import { actionFor, autoPrefix, handleShepherdrActionRequest, readActionRequest, readGlance, readTaskIdentities, shepherdrPaths, sseEvents, ShepherdrFeed, tasksOf, type GlanceDoc, type ShepherdrPaths, type TerminalFacts } from "./shepherdr-tasks.ts";
 
 const dirs: string[] = [];
 const tempDir = () => { const dir = mkdtempSync(join(tmpdir(), "ovis-shepherdr-")); dirs.push(dir); return dir; };
@@ -207,5 +207,89 @@ describe("following the feed", () => {
     await Bun.sleep(20); // fixed wait: proving nothing more is asked after the refusal
     feed.stop();
     expect(asked).toEqual([]);
+  });
+});
+
+describe("acting on a row", () => {
+  const rows = tasksOf(feedDoc([
+    { key: "need:A-1/worker:q1", kind: "needs", type: "need", task: "A-1", title: "A-1 · Needs you", body: "Rerun?", answer: { chat: "A-1/worker", question: "q1", choices: [{ i: 0, label: "Yes" }, { i: 2, label: "No" }], other: true } },
+    { key: "need:A-2/worker:q2", kind: "needs", type: "need", task: "A-2", title: "A-2 · Needs you", body: "Pick", answer: { chat: "A-2/worker", question: "q2", choices: [{ i: 0, label: "Yes" }] } },
+    { key: "ready:m3:B-4", kind: "ready", type: "task", task: "m3:B-4", title: "B-4 · Finished", body: "Voice", machine: "Mac mini", accept: { task: "m3:B-4" } },
+  ]), false, [], new Map()).rows;
+  const [question, noOther, ready] = rows as [typeof rows[0], typeof rows[0], typeof rows[0]];
+
+  it("sends Shepherdr only what the row offers, as the feed documents it", () => {
+    expect(actionFor(ready, { key: ready.key, accept: true })).toEqual({ type: "accept", task: "m3:B-4" });
+    expect(actionFor(question, { key: question.key, choice: 2 })).toEqual({ type: "answer", chat: "A-1/worker", question: "q1", choice: 2, fromAlert: true });
+    expect(actionFor(question, { key: question.key, other: "  run it again  " })).toEqual({ type: "answer", chat: "A-1/worker", question: "q1", other: "run it again", fromAlert: true });
+    expect(actionFor(question, { key: question.key, choice: 1 })).toBeNull();
+    expect(actionFor(question, { key: question.key, accept: true })).toBeNull();
+    expect(actionFor(noOther, { key: noOther.key, other: "words" })).toBeNull();
+    expect(actionFor(question, { key: question.key, other: "   " })).toBeNull();
+    expect(actionFor(ready, { key: ready.key, choice: 0 })).toBeNull();
+  });
+
+  it("reads one of its three shapes, nothing else", () => {
+    expect(readActionRequest({ key: "k", accept: true })).toEqual({ key: "k", accept: true });
+    expect(readActionRequest({ key: "k", choice: 1 })).toEqual({ key: "k", choice: 1 });
+    expect(readActionRequest({ key: "k", other: "x" })).toEqual({ key: "k", other: "x" });
+    expect(readActionRequest({ key: "k", accept: true, choice: 1 })).toBeNull();
+    expect(readActionRequest({ key: "k", choice: -1 })).toBeNull();
+    expect(readActionRequest({ key: "k", accept: "yes" })).toBeNull();
+    expect(readActionRequest({ choice: 1 })).toBeNull();
+    expect(readActionRequest({ key: "k", type: "send", text: "hi" })).toBeNull();
+  });
+
+  function service(answer: (init: RequestInit) => Response, health: Record<string, unknown> = { app: "shepherdr", id: "right", serving: true }) {
+    const dir = tempDir();
+    const paths = { serviceFile: join(dir, "service.json"), tokenFile: join(dir, "token"), tasksDir: join(dir, "tasks") };
+    writeFileSync(paths.serviceFile, JSON.stringify({ port: 7788, id: "right" }));
+    writeFileSync(paths.tokenFile, "secret\n");
+    const sent: Array<{ url: string; headers: Headers; body: unknown }> = [];
+    const feed = new ShepherdrFeed({ paths, onDoc: () => {}, fetch: async (url, init) => {
+      if (url.endsWith("/api/health")) return Response.json(health);
+      sent.push({ url, headers: new Headers(init?.headers), body: JSON.parse(String(init?.body)) });
+      return answer(init ?? {});
+    } });
+    return { feed, sent };
+  }
+
+  it("posts to Shepherdr's action endpoint with the token and no Origin, once health answers its id", async () => {
+    const { feed, sent } = service(() => Response.json({ ok: true }));
+    expect(await feed.act({ type: "accept", task: "B-4" })).toEqual({ ok: true });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.url).toBe("http://127.0.0.1:7788/api/action");
+    expect(sent[0]!.headers.get("authorization")).toBe("Bearer secret");
+    expect(sent[0]!.headers.get("origin")).toBeNull();
+    expect(sent[0]!.body).toEqual({ type: "accept", task: "B-4" });
+  });
+
+  it("gives back Shepherdr's own words when it refuses, in either of its forms", async () => {
+    expect(await service(() => new Response("That question was answered already.", { status: 400 })).feed.act({ type: "answer" }))
+      .toEqual({ ok: false, reason: "refused", message: "That question was answered already." });
+    expect(await service(() => Response.json({ ok: false, error: "That agent isn't here any more." })).feed.act({ type: "answer" }))
+      .toEqual({ ok: false, reason: "refused", message: "That agent isn't here any more." });
+  });
+
+  it("sends nothing to a service whose health answers another id", async () => {
+    const { feed, sent } = service(() => Response.json({ ok: true }), { app: "shepherdr", id: "other", serving: true });
+    expect(await feed.act({ type: "accept", task: "B-4" })).toEqual({ ok: false, reason: "absent" });
+    expect(sent).toEqual([]);
+  });
+
+  const post = (body: unknown) => new Request("http://ovis/api/shepherdr/action", { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json" } });
+
+  it("answers the page with Shepherdr's words, or why nothing was sent", async () => {
+    const refused = await handleShepherdrActionRequest(post({ key: "k", accept: true }), { act: async () => ({ ok: false, reason: "refused", message: "Already merged." }) });
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toEqual({ error: { code: "shepherdr_refused", message: "Already merged." } });
+    const done = await handleShepherdrActionRequest(post({ key: "k", choice: 0 }), { act: async () => ({ ok: true }) });
+    expect([done.status, await done.json()]).toEqual([200, { ok: true }]);
+    const gone = await handleShepherdrActionRequest(post({ key: "k", choice: 0 }), { act: async () => "gone" });
+    expect([gone.status, (await gone.json()).error.code]).toEqual([409, "card_gone"]);
+    const none = await handleShepherdrActionRequest(post({ key: "k", choice: 0 }), null);
+    expect([none.status, (await none.json()).error.code]).toEqual([503, "no_shepherdr"]);
+    const bad = await handleShepherdrActionRequest(post({ key: "k", type: "send", text: "hi" }), { act: async () => ({ ok: true }) });
+    expect(bad.status).toBe(400);
   });
 });
