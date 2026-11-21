@@ -18,6 +18,7 @@ import type { Readmission } from "./readmission.ts";
 import type { UsedReport } from "../../shared/account-snapshot.ts";
 import { readSnapshot, type PageAnswer, type ReadOutcome, type SnapshotPorts } from "./snapshot-read.ts";
 import { applyAccountRecords, stageMailboxAdds, type AddGates, type RecordOutcome } from "./records.ts";
+import { relayFetch } from "../outbound.ts";
 
 /** The account service refused a PC route: its status and error code, when it named one. */
 export class AccountServiceRefusal extends Error {
@@ -428,7 +429,7 @@ export class AccountMailbox {
     const late = new Promise<null>((resolve) => { timedOut = () => resolve(null); });
     const cancel = clock.setTimeout(() => { controller.abort(); timedOut(); }, VOUCH_READ_MS);
     const call = async (path: string, body: unknown) => {
-      const response = await (this.options.fetch ?? fetch)(new Request(service + path, {
+      const response = await (this.options.fetch ?? relayFetch)(new Request(service + path, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: controller.signal,
       }));
       if (response.status === 429) {
@@ -669,7 +670,7 @@ export class AccountMailbox {
 
   /** One POST to the account service; `gone` answers 410 with null instead of throwing. */
   private async call(path: string, body: unknown, gone = false): Promise<Record<string, unknown> | null> {
-    const response = await (this.options.fetch ?? fetch)(new Request(String(this.options.service) + path, {
+    const response = await (this.options.fetch ?? relayFetch)(new Request(String(this.options.service) + path, {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(15_000),
     }));
     if (gone && response.status === 410) return null;

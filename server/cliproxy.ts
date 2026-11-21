@@ -5,6 +5,7 @@ import type { CLIProxyStatus, ProviderUsage } from "../shared/protocol.ts";
 import { isJsonObject } from "./http.ts";
 import { writePrivateState } from "./private-state.ts";
 import { FRESH_MS, MIN_REFRESH_MS, systemUsageContext, USAGE_PROVIDERS, UsageHttpError } from "./usage.ts";
+import { outboundFetch } from "./outbound.ts";
 
 export class CLIProxyError extends Error {
   constructor(readonly code: string, readonly status: number, message: string) { super(message); }
@@ -448,7 +449,7 @@ export class CLIProxyService {
     const config = this.config;
     if (!config) throw new CLIProxyError("cliproxy_not_configured", 409, "Configure Hub first");
     try {
-      const response = await fetch(`${config.url}/v8/management${path}`, {
+      const response = await outboundFetch(`${config.url}/v8/management${path}`, {
         ...init, redirect: "error", signal: AbortSignal.timeout(8000),
         headers: { "content-type": "application/json", authorization: `Bearer ${config.management_key}` },
       });

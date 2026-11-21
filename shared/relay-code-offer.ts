@@ -26,10 +26,11 @@ const EXCHANGE_MS = 30_000;
 export interface TypedCodeOptions {
   relay?: string;
   signal?: AbortSignal;
-  connect?: (url: string) => RelaySocket;
+  /** Opens the socket: the server's outbound module (server/outbound.ts), so a typed code goes as relay traffic. */
+  connect: (url: string) => RelaySocket;
 }
 
-export function offerFromCode(input: string, options: TypedCodeOptions = {}): Promise<RelayOffer> {
+export function offerFromCode(input: string, options: TypedCodeOptions): Promise<RelayOffer> {
   const code = normalizePairCode(input);
   if (code === null) return Promise.reject(new TypedCodeError("not-a-code"));
   const url = new URL("/v1/pair", (options.relay ?? GLOBAL_RELAY).replace(/^wss:/, "https:"));
@@ -52,7 +53,7 @@ export function offerFromCode(input: string, options: TypedCodeOptions = {}): Pr
     const aborted = () => settle(new TypedCodeError("unreachable"));
     const timer = setTimeout(() => settle(new TypedCodeError("unreachable")), EXCHANGE_MS);
     options.signal?.addEventListener("abort", aborted);
-    try { socket = (options.connect ?? ((address) => new WebSocket(address)))(url.href); }
+    try { socket = options.connect(url.href); }
     catch { settle(new TypedCodeError("unreachable")); return; }
     socket.binaryType = "arraybuffer";
     socket.onmessage = (event) => {

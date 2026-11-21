@@ -328,5 +328,11 @@ export const DEVICES_KO: Record<string, string> = {
   "This PC did not take the request. Try again.": "이 PC가 요청을 받지 않았어요. 다시 해 보세요.",
   "Strict mode stays on until this PC finishes signing out the devices it ended. Try again shortly.": "끊은 기기 정리가 아직 끝나지 않아 엄격 모드가 켜져 있어요. 잠시 뒤 다시 해 보세요.",
   "This PC is in strict mode.": "이 PC는 엄격 모드예요.",
+  "Blocked by proxy-only mode: {reason}. Retrying.": "프록시 전용 모드로 차단됨: {reason}. 다시 시도하는 중입니다.",
+  "Proxy-only mode on": "프록시 전용 모드 켜짐",
+  "Every connection beyond this PC goes through the proxy at {proxy}. It is set where the server starts (OVIS_OUTBOUND_PROXY_ONLY) and cannot be changed here.": "이 PC 밖으로 나가는 모든 연결은 {proxy} 프록시를 거칩니다. 서버를 시작할 때 설정되며(OVIS_OUTBOUND_PROXY_ONLY) 여기서는 바꿀 수 없습니다.",
+  "Every connection beyond this PC goes through its outbound proxy. It is set where the server starts (OVIS_OUTBOUND_PROXY_ONLY) and cannot be changed here.": "이 PC 밖으로 나가는 모든 연결은 아웃바운드 프록시를 거칩니다. 서버를 시작할 때 설정되며(OVIS_OUTBOUND_PROXY_ONLY) 여기서는 바꿀 수 없습니다.",
+  "Same Wi-Fi, Tailscale and SSH off": "같은 Wi-Fi, Tailscale, SSH 꺼짐",
+  "Turned off by proxy-only mode: phones and other PCs reach this PC through the relay only.": "프록시 전용 모드로 꺼짐: 휴대폰과 다른 PC는 릴레이를 통해서만 이 PC에 연결합니다.",
   "Ask to turn strict mode off": "엄격 모드 끄기 요청",
 };

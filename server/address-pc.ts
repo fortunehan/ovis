@@ -21,6 +21,7 @@ import { OUTPUT_STALLED_CLOSE_CODE } from "../shared/terminal-flow.ts";
 import { OUTPUT_HARD_BYTES } from "./output-window.ts";
 import { writePrivateState } from "./private-state.ts";
 import { readCappedJson, REMOTE_LIMITS } from "./remote-json.ts";
+import { outboundFetch } from "./outbound.ts";
 
 /** Why no PC was added by its address (POST /api/machines/address answers `address_pc_<failure>`, the app words each one). */
 export class AddressPcError extends Error {
@@ -100,7 +101,7 @@ export async function checkAddressTarget(origin: string, resolve: typeof lookup 
 /** The boot id of the Ovis at `origin` (its open health answer), or null: this server's own says the address is itself. */
 export async function addressBootId(origin: string): Promise<string | null> {
   try {
-    const response = await fetch(`${origin}/api/health?scope=bridge`, { redirect: "error", signal: AbortSignal.timeout(PAIR_MS) });
+    const response = await outboundFetch(`${origin}/api/health?scope=bridge`, { redirect: "error", signal: AbortSignal.timeout(PAIR_MS) });
     const health = await readCappedJson<{ web_ui?: { boot_id?: unknown } } | null>(response, REMOTE_LIMITS.health);
     return typeof health?.web_ui?.boot_id === "string" ? health.web_ui.boot_id : null;
   } catch { return null; }
@@ -113,7 +114,7 @@ export async function addressBootId(origin: string): Promise<string | null> {
 export async function pairAddressPc(origin: string, code: string, label: string, signal?: AbortSignal): Promise<string> {
   let response: Response;
   try {
-    response = await fetch(`${origin}/api/devices/pair`, {
+    response = await outboundFetch(`${origin}/api/devices/pair`, {
       method: "POST", redirect: "error",
       headers: { accept: "application/json", "content-type": "application/json" },
       body: JSON.stringify({ code, label }),
@@ -198,7 +199,7 @@ export function openAddressPcForward(origin: string, deviceToken: string, onLost
   const checkRefused = async (): Promise<void> => {
     if (closed) return;
     try {
-      const response = await fetch(`${origin}/api/session`, { headers: { authorization: `Device ${deviceToken}` }, redirect: "error", signal: AbortSignal.timeout(PAIR_MS) });
+      const response = await outboundFetch(`${origin}/api/session`, { headers: { authorization: `Device ${deviceToken}` }, redirect: "error", signal: AbortSignal.timeout(PAIR_MS) });
       void response.body?.cancel();
       if (response.status === 401) refused();
     } catch { }
@@ -218,7 +219,7 @@ export function openAddressPcForward(origin: string, deviceToken: string, onLost
       }
       let response: Response;
       try {
-        response = await fetch(origin + target, {
+        response = await outboundFetch(origin + target, {
           method: request.method, headers: upstreamHeaders(request.headers), redirect: "error", signal: request.signal,
           body: request.method === "GET" || request.method === "HEAD" ? undefined : request.body,
         });

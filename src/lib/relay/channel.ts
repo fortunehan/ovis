@@ -8,9 +8,9 @@ export { ADMISSION_MS, ASSIGNMENT_MS, PC_ANSWER_MS, RelayAdmissionTimeoutError, 
 export type { RelayChannel, RelayServerInfo, RelaySocket } from "../../../shared/relay-channel.ts";
 
 /** In the hosted app a PC's key is kept in this browser's IndexedDB unless another store is given. */
-export type RelayChannelOptions = Omit<SharedChannelOptions, "store"> & { readonly store?: RelayDeviceStore };
+export type RelayChannelOptions = Omit<SharedChannelOptions, "store" | "socket"> & { readonly store?: RelayDeviceStore; readonly socket?: SharedChannelOptions["socket"] };
 
 /** Resolves only after protected Noise, WELCOME and device admission all succeeded. Never retries. */
 export function openRelayChannel(offer: RelayOffer, options: RelayChannelOptions = {}): Promise<RelayChannel> {
-  return openSharedChannel(offer, { ...options, store: options.store ?? indexedDeviceStore });
+  return openSharedChannel(offer, { ...options, store: options.store ?? indexedDeviceStore, socket: options.socket ?? ((address) => new WebSocket(address)) });
 }

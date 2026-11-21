@@ -13,6 +13,7 @@ import { installedBinaryAt, pluginBinaryOf } from "./updater.ts";
 import { acquireOwnerDirectory } from "./owner-guard.ts";
 import { profileFolderRefusal } from "./profile-marker.ts";
 import { runCommand, updateChannel, Updater, type Release } from "./updater.ts";
+import { outboundFetch } from "./outbound.ts";
 
 const RUST_HOST_RETRY_MS = 6 * 60 * 60_000;
 /**
@@ -147,7 +148,7 @@ export async function runSupervisor(root = ROOT) {
     const ours = (body: { web_ui?: { boot_id?: string } }) => body.web_ui?.boot_id === bootId;
     while (Date.now() < deadline && !stopping && candidate.exitCode === null) {
       try {
-        const bridge = await fetch(`${origin}/api/health?scope=bridge`, { signal: AbortSignal.timeout(1000) });
+        const bridge = await outboundFetch(`${origin}/api/health?scope=bridge`, { signal: AbortSignal.timeout(1000) });
         const own = await bridge.json() as { web_ui?: { boot_id?: string }; runtime?: string };
         // a bridge from before its own answer carried the boot id (an older checkout a release falls back
         // to): the whole health answer is the only check it can pass, as it always was
@@ -155,7 +156,7 @@ export async function runSupervisor(root = ROOT) {
         if (older || bridge.ok && ours(own)) {
           let ready = !older && (own.runtime === undefined || own.runtime === "herdr") && !await herdrMayListen(socketPath);
           if (!ready) {
-            const response = await fetch(`${origin}/api/health`, { signal: AbortSignal.timeout(1000) });
+            const response = await outboundFetch(`${origin}/api/health`, { signal: AbortSignal.timeout(1000) });
             ready = response.ok && ours(await response.json() as { web_ui?: { boot_id?: string } });
           }
           if (ready) {

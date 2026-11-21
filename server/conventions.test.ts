@@ -299,3 +299,41 @@ describe("server entries", () => {
     expect(START_BY_PATH.test("Bun.spawn(entryCommand(\"machine\"), {")).toBe(false);
   });
 });
+
+describe("outbound connections", () => {
+  // Proxy-only mode (docs/relay.md) holds only while every dial goes through server/outbound.ts: a bare fetch or
+  // WebSocket would connect directly, past the outbound proxy and the relay's NO_PROXY rule.
+  /** the global `fetch` called or passed on (not a property, an object key or a type), and the global WebSocket */
+  const DIAL = /(?<![\w$.]|typeof\s+)fetch(?![\w$])(?!\s*\??:)|\bnew\s+WebSocket\s*\(|\bglobalThis\s*\.\s*(?:fetch|WebSocket)\b/;
+  /** `fetch(request, server) {`: a Bun.serve handler, and `fetch(url: string): Promise<Response>;` a signature, not calls */
+  const HANDLER = /^\s*(?:async\s+)?fetch\s*\([^)]*\)\s*(?:\{|:[^{;]*[{;])\s*$/;
+  const dials = (fileList: string[]) => fileList.flatMap((file) => {
+    const code = stripComments(read(file), { strings: true });
+    return code.split("\n").flatMap((line, index) => DIAL.test(line) && !HANDLER.test(line) ? [`${file}:${index + 1}: ${line.trim().slice(0, 160)}`] : []);
+  });
+  const code = (): string[] => files("{server,shared}/**/*.{ts,mjs,js}")
+    .filter((file) => !/\.test\.ts$|[.-]fake\.ts$|\.fixture\.ts$|test-helpers\.ts$/.test(file) && file !== "server/outbound.ts" && !file.includes("/node_modules/"));
+
+  it("dials only through server/outbound.ts", () => {
+    fail(dials(code()),
+      "Open connections through server/outbound.ts: outboundFetch/relayFetch and outboundWebSocket/relayWebSocket beyond this machine, localFetch/localWebSocket to it. Shared code takes its socket factory from its caller.");
+  });
+
+  it("knows a dial from a handler or a method", () => {
+    const found = (line: string) => DIAL.test(line) && !HANDLER.test(line);
+    expect(found("const response = await fetch(url, { signal });")).toBe(true);
+    expect(found("return fetch(request);")).toBe(true);
+    expect(found("const socket = new WebSocket(address);")).toBe(true);
+    expect(found("globalThis.fetch = guarded;")).toBe(true);
+    expect(found("  async fetch(request, bun) {")).toBe(false);
+    expect(found("    fetch(request, server) {")).toBe(false);
+    expect(found("  fetch(url: string, init: RequestInit): Promise<Response>;")).toBe(false);
+    expect(found("  fetch(url);")).toBe(true);
+    expect(found("await this.options.fetch(url, init);")).toBe(false);
+    expect(found("await outboundFetch(url, init);")).toBe(false);
+    expect(found("const response = await (options.fetch ?? fetch)(url);")).toBe(true);
+    expect(found("new VoiceService({ stateDir, fetch });")).toBe(true);
+    expect(found("  fetch?: typeof fetch;")).toBe(false);
+    expect(found("const voice = new VoiceService({ fetch: outboundFetch });")).toBe(false);
+  });
+});

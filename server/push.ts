@@ -86,6 +86,7 @@ import { badRequest, jsonResponse, setRequestRoute } from "./http.ts";
 import { isLoopbackHost } from "./access.ts";
 import type { AlertWebhook } from "./alert-webhook.ts";
 import { privateStateRefusal, writePrivateState } from "./private-state.ts";
+import { outboundFetch } from "./outbound.ts";
 
 /** A blocked agent is still blocked when the phone gets signal back; a newer push for the pane replaces it anyway. */
 const PUSH_TTL_SECONDS = 12 * 60 * 60;
@@ -662,7 +663,8 @@ export function createPushService(options: PushServiceOptions): PushService {
     for (const [name, value] of Object.entries(details.headers)) headers[name] = String(value);
     let status: number | null = null;
     try {
-      const response = await fetch(details.endpoint, {
+      // push to the push relay is relay traffic: proxy-only mode sends it through the proxy whatever NO_PROXY says
+      const response = await outboundFetch(details.endpoint, {
         method: details.method,
         headers,
         body: new Uint8Array(details.body),
@@ -670,7 +672,7 @@ export function createPushService(options: PushServiceOptions): PushService {
         // wherever the endpoint points, past the https-only check (a local service, over http)
         redirect: "error",
         signal: AbortSignal.timeout(PUSH_TIMEOUT_MS),
-      });
+      }, RELAY_ENDPOINT_PATH.test(new URL(details.endpoint).pathname) ? "relay" : "other");
       if (response.ok) {
         if (stillOwns(identity, subscription.endpoint)) recordDelivery(identity, null);
         return { ok: true };

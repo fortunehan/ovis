@@ -4,6 +4,7 @@ import { join, dirname } from "node:path";
 import { REMOTE_BUNDLE_VERSION } from "../shared/machines.ts";
 import { ROOT } from "./entries.ts";
 import { discard, readCappedJson, REMOTE_LIMITS } from "./remote-json.ts";
+import { outboundFetch } from "./outbound.ts";
 
 export interface BundleManifest {
   version: string;
@@ -45,7 +46,7 @@ async function fileSha256(path: string): Promise<string> {
 
 /** The response body to <cache>/<sha>.tgz, checked on the way; a partial file never keeps the name. */
 async function download(url: string, sha256: string, cacheDir: string, report: (done: number, total: number | null) => void): Promise<void> {
-  const response = await fetch(url, { signal: AbortSignal.timeout(30 * 60_000) });
+  const response = await outboundFetch(url, { signal: AbortSignal.timeout(30 * 60_000) });
   if (!response.ok || !response.body) throw new Error(`Bundle download failed (${response.status})`);
   const length = Number(response.headers.get("content-length"));
   const total = Number.isFinite(length) && length > 0 ? length : null;
@@ -86,7 +87,7 @@ export async function bundleFile(platform: string, signal: AbortSignal, options:
   const source = await bundleManifestSource(platform, options);
   const https = source.startsWith("https://");
   const manifest: BundleManifest = https
-    ? await fetch(source, { signal }).then(async (r) => {
+    ? await outboundFetch(source, { signal }).then(async (r) => {
       if (!r.ok) { await discard(r); throw new Error(`Remote bundle for ${platform} is unavailable (HTTP ${r.status}). On the web server, run bun run build:remote ${platform}, or configure OVIS_BUNDLE_MANIFEST.`); }
       return readCappedJson<BundleManifest>(r, REMOTE_LIMITS.bundleManifest);
     })

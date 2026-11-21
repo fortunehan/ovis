@@ -28,6 +28,7 @@ import { finishPrompt, own, type ParsedPrompt, type PromptDraft } from "./dialog
 import { paneProcessInfo } from "./herdr/client.ts";
 import { badRequest, jsonResponse } from "./http.ts";
 import { bridgeState, ownSocket, piPaneAgentDirs, piTranscriptPath } from "./pi.ts";
+import { localFetch } from "./outbound.ts";
 
 /** The extension gives pi-ask 3 s to confirm; this covers that and the socket round trip. */
 const SUBMIT_MS = 4_000;
@@ -90,7 +91,7 @@ function sameFile(left: string, right: string): boolean {
 
 async function submit(socket: string, request: PiAskSubmitRequest, signal: AbortSignal): Promise<PiAskSubmitReply | null> {
   try {
-    const response = await fetch("http://localhost/v1/submit", {
+    const response = await localFetch("http://localhost/v1/submit", {
       unix: socket, method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request),
       signal: AbortSignal.any([signal, AbortSignal.timeout(SUBMIT_MS)]),
     });

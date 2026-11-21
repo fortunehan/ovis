@@ -1,5 +1,6 @@
 import { machineFailure, machineHealth, machineLayoutReason, machineReadError, machineRoster, machineRouteRestricted, machineTcpAnswer, machineUnauthorized } from "./machine-profile.ts";
 import { handleWorkspaceRequest } from "./workspace-routes.ts";
+import { outboundStatus } from "./outbound.ts";
 import { handleAlertWebhookRequest } from "./alert-webhook.ts";
 import { connectionData, type createCore, type SocketData } from "./core/index.ts";
 import type { ClientConnectionLog } from "./client-connection-log.ts";
@@ -698,6 +699,8 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
     } : undefined;
     const securityHeaders: Record<string, string> = security ? { "cache-control": "no-store" } : {};
     const relay = access.level === "full" ? { relay: ctx.services.relay.status() } : {};
+    // proxy-only mode and the latest refusal (server/outbound.ts), for a client that got in: a refusal names a host
+    const outbound = access.level === "full" ? { outbound: outboundStatus() } : {};
     const serverId = access.level === "full" && access.via !== "open" ? ctx.services.relay.serverId() : undefined;
     // what this PC has of the Herdr app's runtime, for Settings: never waited for, no path in it.
     // Only a driving owner is told: a session name can name a project, which a watching device, a
@@ -709,7 +712,7 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
     const account_devices = owner ? devices.accountGroups() : undefined;
     if (options.profile === "machine") {
       const health = await machineHealth(options.machineEngine ?? "herdr", await options.machineRefusal?.());
-      return jsonResponse({ ok: true, auth, version, runtime: "herdr", ...relay, ...health,
+      return jsonResponse({ ok: true, auth, version, runtime: "herdr", ...relay, ...outbound, ...health,
         ...(health.herdr ? { herdr: attachableIdentity(health.herdr, sidecar) } : {}), ...(account_devices ? { account_devices } : {}),
         ...(security ? { security } : {}), web_ui: { boot_id: bootId, ...(serverId ? { server_id: serverId } : {}) },
       }, 200, { "cache-control": "no-store" });
@@ -717,20 +720,20 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
     // this PC's own window, and the port it reaches this server on: where the page may sign in to the account through
     // the loopback redirect, an app's own sign-in (src/lib/account/ownWindow.ts); any other window signs in with a code
     const own_window = ownWindow && ctx.port !== undefined ? { port: ctx.port } : undefined;
-    if (url.searchParams.get("scope") === "bridge") return jsonResponse({ ok: true, auth, bridge_protocol: BRIDGE_PROTOCOL, ...relay, ...(own_window ? { own_window } : {}), ...(security ? { security } : {}), web_ui: { boot_id: bootId }, runtime: runtime(), ...(options.launchAccepted ? { accepted: options.launchAccepted() } : {}), ...(herdr_runtime ? { herdr_runtime } : {}) }, 200, securityHeaders);
+    if (url.searchParams.get("scope") === "bridge") return jsonResponse({ ok: true, auth, bridge_protocol: BRIDGE_PROTOCOL, ...relay, ...outbound, ...(own_window ? { own_window } : {}), ...(security ? { security } : {}), web_ui: { boot_id: bootId }, runtime: runtime(), ...(options.launchAccepted ? { accepted: options.launchAccepted() } : {}), ...(herdr_runtime ? { herdr_runtime } : {}) }, 200, securityHeaders);
     const herdr_core = owner ? options.herdrCoreFacts?.() : undefined;
     try {
       const info = await ping();
       // a forced answer (tests) and a runtime without the PTY sidecar are told the way a Windows herdr's own would be
       const herdr = attachableIdentity(info, sidecar);
       // this server's own version (package.json, embedded in the compiled binary), told with the other facts to a client that got in
-      return jsonResponse({ ok: true, herdr, auth, ...(access.level === "full" ? { version } : {}), ...relay, ...exposure, ...(security ? { security } : {}), ...(herdr_core ? { herdr_core } : {}), ...(herdr_runtime ? { herdr_runtime } : {}), ...(account_devices ? { account_devices } : {}),
+      return jsonResponse({ ok: true, herdr, auth, ...(access.level === "full" ? { version } : {}), ...relay, ...outbound, ...exposure, ...(security ? { security } : {}), ...(herdr_core ? { herdr_core } : {}), ...(herdr_runtime ? { herdr_runtime } : {}), ...(account_devices ? { account_devices } : {}),
         web_ui: { boot_id: bootId, revision: process.env["OVIS_REVISION"] ?? null, ...(serverId ? { server_id: serverId } : {}) } }, 200, securityHeaders);
     } catch (error) {
       const failed = errorResponse(error);
-      if (!lan_exposure && !direct_exposure) return failed;
+      if (!lan_exposure && !direct_exposure && !outboundStatus().proxy_only) return failed;
       const body: unknown = await failed.json();
-      return jsonResponse({ ...(body !== null && typeof body === "object" ? body : {}), ...exposure }, failed.status, { "cache-control": "no-store" });
+      return jsonResponse({ ...(body !== null && typeof body === "object" ? body : {}), ...outbound, ...exposure }, failed.status, { "cache-control": "no-store" });
     }
   }
 

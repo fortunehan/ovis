@@ -40,6 +40,7 @@ import { errorResponse, isJsonObject, jsonResponse, setRequestRoute } from "./ht
 import { chunksOf } from "./remote-bundle.ts";
 import { updateRequestAllowed } from "./update-api.ts";
 import { windowsArgv, windowsProcessTable } from "./windows-processes.ts";
+import { outboundFetch } from "./outbound.ts";
 
 /** the first release with `--strip-request-header` and an address tied to the identity */
 const PORTAL_VERSION = "v2.6.1";
@@ -814,7 +815,7 @@ export class PortalService {
   private async checkRelay(relay: string): Promise<void> {
     let body: unknown;
     try {
-      const response = await (this.options.fetch ?? fetch)(`${relay}/sdk/domain`, { signal: AbortSignal.timeout(RELAY_TIMEOUT_MS), redirect: "error" });
+      const response = await (this.options.fetch ?? outboundFetch)(`${relay}/sdk/domain`, { signal: AbortSignal.timeout(RELAY_TIMEOUT_MS), redirect: "error" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       body = await response.json();
     } catch (error) {

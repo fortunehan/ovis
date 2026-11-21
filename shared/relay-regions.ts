@@ -27,7 +27,7 @@ export function regionalAppUrl(location: { origin: string; pathname: string; has
   } catch { return null; }
 }
 
-export async function regionalAppReady(app: string, fetcher: typeof fetch = fetch, timeoutMs = 3000): Promise<boolean> {
+export async function regionalAppReady(app: string, fetcher: typeof fetch, timeoutMs = 3000): Promise<boolean> {
   const revision = async (origin: string): Promise<string | null> => {
     const response = await fetcher(`${origin}/build.json`, { cache: "no-store", signal: AbortSignal.timeout(timeoutMs) });
     const body: unknown = response.ok ? await response.json() : null;

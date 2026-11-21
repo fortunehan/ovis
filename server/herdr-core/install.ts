@@ -14,6 +14,7 @@ import { chmodSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readlinkSync, r
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { hcVersion } from "./discovery.ts";
+import { outboundFetch } from "../outbound.ts";
 
 type Env = Record<string, string | undefined>;
 
@@ -66,7 +67,7 @@ export async function installHc(options: InstallHcOptions): Promise<InstalledHc>
   const dest = join(bin, "herdr-core");
   if (present(dest)) throw new Error(`${dest} is already there; Ovis does not replace it`);
 
-  const response = await (options.fetch ?? fetch)(target.url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
+  const response = await (options.fetch ?? outboundFetch)(target.url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
   if (!response.ok) throw new Error(`downloading herdr-core failed (HTTP ${response.status})`);
   const archive = await boundedBody(response, ARCHIVE_LIMIT);
   if (createHash("sha256").update(archive).digest("hex") !== target.sha256) throw new Error("the herdr-core download does not match its checksum");

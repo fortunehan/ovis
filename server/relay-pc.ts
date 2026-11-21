@@ -21,6 +21,7 @@ import { validateOffer } from "../shared/relay-offer.ts";
 import { OUTPUT_STALLED_CLOSE_CODE } from "../shared/terminal-flow.ts";
 import { OUTPUT_HARD_BYTES } from "./output-window.ts";
 import { writePrivateState } from "./private-state.ts";
+import { localNetworkWebSocket, proxyOnly, relayWebSocket } from "./outbound.ts";
 
 /** The other PC refused this one for good (revoked, never paired, a new identity or protocol): retrying cannot help. */
 export class RelayPcRefused extends Error {
@@ -224,7 +225,10 @@ export async function openRelayPcTunnel(offer: RelayOffer, key: RelayPcKey, opti
   if ((probes.network !== undefined && probes.network !== startNetwork) || sleptSince(probes)) Object.assign(probes, newRouteProbes());
   probes.network = startNetwork;
   const due = (): boolean => !probes.failed || probes.at + PROBE_EVERY_MS * probes.backoff <= performance.now();
-  const directSocket = options.directSocket ?? ((url: string) => new WebSocket(url) as unknown as RelaySocket);
+  const directSocket = options.directSocket ?? ((url: string) => localNetworkWebSocket(url) as unknown as RelaySocket);
+  const relaySocket = options.socket ?? ((url: string) => relayWebSocket(url) as unknown as RelaySocket);
+  // proxy-only mode turns local-network carriers off: this PC never dials the other one's private or Tailscale address
+  const directAllowed = !proxyOnly();
   // a pairing's one-time code is spent once admitted: every channel after the first signs in with the key
   const { code: _code, ...signIn } = offer;
   let closed = false;
@@ -235,11 +239,11 @@ export async function openRelayPcTunnel(offer: RelayOffer, key: RelayPcKey, opti
   let replaced: Error | undefined;
   const label = (await key.list())[0]!.label;
   const base = (): RelayChannelOptions => ({
-    store: key, label,
+    store: key, label, socket: relaySocket,
     // whoever asks through the forward sets the deadline (the machine proxy: 75 s, 165 s for its slow routes)
     // a server can dial a Tailscale address whenever this PC is on Tailscale, and fails fast when not: always asked
     // for, so the carriers kept with the key stay right when Tailscale comes and goes
-    requestTimeoutMs: () => 0, offerDirect: true, offerTailnet: true,
+    requestTimeoutMs: () => 0, offerDirect: directAllowed, offerTailnet: directAllowed,
   });
   /**
    * The deadline is the admission's only:
@@ -256,7 +260,7 @@ export async function openRelayPcTunnel(offer: RelayOffer, key: RelayPcKey, opti
       // only the first channel pairs: every one after it signs in with the key that pairing admitted
       const pairing = options.pairing !== undefined && !paired ? vouchedPairing(options.pairing) : {};
       paired = true;
-      return channel = (await openRelayChannelWithFallback(offer, { ...settings, ...pairing, ...(options.socket ? { socket: options.socket } : {}) }, openRelayChannel)).channel;
+      return channel = (await openRelayChannelWithFallback(offer, { ...settings, ...pairing }, openRelayChannel)).channel;
     }
     const attempt = new AbortController();
     const stop = (): void => attempt.abort();
@@ -275,7 +279,7 @@ export async function openRelayPcTunnel(offer: RelayOffer, key: RelayPcKey, opti
   let worked: string | undefined;
   const routes = (): string[] => orderDirectRoutes(learned, worked);
   const openDirect = async (): Promise<RelayChannel | undefined> => {
-    const carriers = routes();
+    const carriers = directAllowed ? routes() : [];
     if (carriers.length === 0 || !due()) return undefined;
     const ends = performance.now() + DIRECT_BUDGET_MS;
     for (const [index, direct] of carriers.entries()) {
@@ -472,7 +476,7 @@ export async function openRelayPcTunnel(offer: RelayOffer, key: RelayPcKey, opti
     }
   };
   const check = (): void => {
-    if (closed || checking) return;
+    if (closed || checking || !directAllowed) return;
     const candidates = earlier();
     if (candidates.length === 0) return;
     const wait = probes.at + PROBE_EVERY_MS * probes.backoff - performance.now();
@@ -572,7 +576,7 @@ export async function vouchedSupport(offer: RelayOffer, options: { socket?: (url
     await openRelayChannelWithFallback(plain, {
       store: key, label: relayPcLabel(), compare: () => new Promise<void>(() => {}), intent: "vouched",
       beforeRequest: (server) => { throw new Answered(server.features?.includes(PAIR_INTENT_VOUCHED) === true); },
-      ...(options.socket ? { socket: options.socket } : {}), ...(options.pcAnswerMs === undefined ? {} : { pcAnswerMs: options.pcAnswerMs }),
+      socket: options.socket ?? ((url: string) => relayWebSocket(url) as unknown as RelaySocket), ...(options.pcAnswerMs === undefined ? {} : { pcAnswerMs: options.pcAnswerMs }),
     }, openRelayChannel);
     return "ready";
   } catch (error) {

@@ -93,6 +93,7 @@ import { holdCommandHistory } from "./claude-command-history.ts";
 import { holdFilePool } from "./file-pool.ts";
 import { handleRequest, type RequestServices, type ServerContext } from "./dispatch.ts";
 import { lanHttpsCertificate, lanHttpsConfig, privateLanAddresses, privateLanPeer, type LanHttpsConfig } from "./lan-https.ts";
+import { configureOutbound, forceProxyEnv, installOutboundGuard, outboundFetch, proxyOnlyStartRefusal, ProxyOnlyStartError } from "./outbound.ts";
 
 
 
@@ -231,6 +232,8 @@ export function createServer(
     platform?: NodeJS.Platform;
     /** the desktop app's end of the desktop-owner channel (`takeDesktopOwnerFd`); used only with `accountOpensAll` */
     desktopOwner?: { input: ReadableStream<Uint8Array>; write(line: string): void };
+    /** the environment proxy-only mode is read from (server/outbound.ts), process.env unless a test gives its own */
+    outboundEnv?: Record<string, string | undefined>;
     backgroundWait?: { grace: number; limit: number };
     statusNow?: () => number;
     herdrIdentity?: () => string | null;
@@ -270,6 +273,10 @@ export function createServer(
   const orderSequence = new OrderSequence(bootId);
   const hostname = options.hostname ?? process.env["HOST"] ?? "127.0.0.1";
   const ipv6Loopback = (options.ipv6Loopback ?? process.env["OVIS_IPV6_LOOPBACK"] === "1") && hostname === "127.0.0.1";
+  // proxy-only mode comes from the environment the server starts in, never from a request: it fails closed here
+  const outbound = configureOutbound(options.outboundEnv ?? process.env);
+  const outboundRefusal = proxyOnlyStartRefusal(outbound, hostname);
+  if (outboundRefusal !== null) throw new ProxyOnlyStartError(outboundRefusal);
   /** Empty token = gate disabled; every route then behaves exactly as it did before auth existed. */
   const token = options.token ?? process.env["OVIS_TOKEN"] ?? "";
   /** paired devices (server/devices.ts) and the PC's Tailscale login: the two ways in besides the token and this PC itself */
@@ -412,7 +419,7 @@ export function createServer(
       catch (error) { console.warn("Could not restore the signed-in account to Ovis", error instanceof Error ? error.message : String(error)); }
     }
   });
-  const voice = options.voice ?? new VoiceService({ stateDir, env: process.env, fetch });
+  const voice = options.voice ?? new VoiceService({ stateDir, env: process.env, fetch: outboundFetch });
   /** a login named here is taken as it is: a tagged node has none of its own to read (OVIS_TAILSCALE_OWNER) */
   const namedOwner = options.tailscaleOwner !== undefined ? options.tailscaleOwner : process.env["OVIS_TAILSCALE_OWNER"]?.trim() || undefined;
   const tailnet = options.tailnet ?? new TailnetIdentitySource();
@@ -648,7 +655,8 @@ export function createServer(
   // one listener per address on one port, all or none: a half-bound set would answer where nobody asked it to
   const lanListeners: Bun.Server<SocketData>[] = [];
   let lanHttps: ServerInstance["lanHttps"] = null;
-  if (options.lanHttps) {
+  if (options.lanHttps && outbound.proxyOnly) console.error("LAN HTTPS is off: proxy-only mode listens on loopback only.");
+  if (options.lanHttps && !outbound.proxyOnly) {
     const config = options.lanHttps;
     try {
       const addresses = config.host !== undefined ? [config.host] : privateLanAddresses();
@@ -744,6 +752,7 @@ export function createServer(
       recoverySocket?.stop();
       desktopOwner?.stop();
       for (const listener of lanListeners) listener.stop(true);
+      if (options.outboundEnv !== undefined) configureOutbound(process.env);
       releaseFilePool();
       releaseCommandHistory();
       requestLog.close();
@@ -754,6 +763,18 @@ export function createServer(
 export async function serve(): Promise<void> {
   // before anything is spawned, so no child holds the desktop app's channel
   const desktopOwnerFd = takeDesktopOwnerFd(process.argv);
+  // proxy-only mode fails closed before anything starts or connects (docs/relay.md, "Proxy-only mode")
+  const outbound = configureOutbound(process.env);
+  const outboundRefusal = proxyOnlyStartRefusal(outbound, process.env["HOST"] ?? "127.0.0.1");
+  if (outboundRefusal !== null) {
+    console.error(outboundRefusal);
+    process.exit(1);
+  }
+  if (outbound.proxyOnly) {
+    forceProxyEnv();
+    installOutboundGuard();
+    console.log(`Proxy-only mode: every connection beyond this PC goes through the proxy at ${outbound.display}; local-network carriers (direct, Tailscale, SSH PCs) are off.`);
+  }
   const profile = process.env["OVIS_PROFILE"] === "machine";
   if (profile && !fleetPreview()) {
     console.error("The machine profile is a preview and was not started; set OVIS_PREVIEW=fleet beside OVIS_PROFILE=machine to start it.");
@@ -839,12 +860,12 @@ export async function serve(): Promise<void> {
     process.exit(1);
   }
   const updates = connectUpdater();
-  const telemetry = new Telemetry({ stateDir, version, env: process.env, fetch, previousVersion: () => updates.installed().previous_version, runtime: herdrCore === null ? "herdr" : "herdr-core" });
+  const telemetry = new Telemetry({ stateDir, version, env: process.env, fetch: outboundFetch, previousVersion: () => updates.installed().previous_version, runtime: herdrCore === null ? "herdr" : "herdr-core" });
   const portal = profile ? undefined : new PortalService({ stateDir });
   // the direct carrier on this PC's private and Tailscale addresses, which the phone apps' OvisDirect plugin opens (docs/relay.md)
   const tailnet = new TailnetIdentitySource();
-  const relay = new RelayService({ stateDir, ...(profile && !MACHINE_DIRECT_CARRIER_ENABLED ? {} : { direct: { tailnetIp: () => tailnet.identity().tailnetIp } }), accountService: passAccountService() });
-  const lanConfig = profile ? null : lanHttpsConfig(process.env);
+  const relay = new RelayService({ stateDir, ...(profile && !MACHINE_DIRECT_CARRIER_ENABLED || outbound.proxyOnly ? {} : { direct: { tailnetIp: () => tailnet.identity().tailnetIp } }), accountService: passAccountService() });
+  const lanConfig = profile || outbound.proxyOnly ? null : lanHttpsConfig(process.env);
   if (lanConfig !== null && "error" in lanConfig) console.error(`LAN HTTPS is off: ${lanConfig.error}.`);
   let instance: ReturnType<typeof createServer>;
   try {

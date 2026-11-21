@@ -7,6 +7,7 @@
  * itself admits nobody, and no account membership comes from it.
  */
 import { HTTPS_PORTS, tailscaleBinary } from "./tailscale.ts";
+import { outboundFetch } from "./outbound.ts";
 
 const PROBE_MS = 2500;
 /** an address the list found stays addable this long */
@@ -115,7 +116,7 @@ export class TailnetPcs {
 
   private async probe(url: string): Promise<Health | null> {
     try {
-      const response = await fetch(`${url}/api/health`, { signal: AbortSignal.timeout(PROBE_MS), redirect: "error" });
+      const response = await outboundFetch(`${url}/api/health`, { signal: AbortSignal.timeout(PROBE_MS), redirect: "error" });
       if (!response.ok) { void response.body?.cancel(); return null; }
       const health = await boundedJson(response);
       return typeof health === "object" && health !== null ? health as Health : null;
@@ -168,7 +169,7 @@ export class TailnetPcs {
     if (TailnetPcs.outdated(health)) throw new TailnetPcError("outdated", OUTDATED);
     let response: Response;
     try {
-      response = await fetch(`${url}/api/relay/code`, { method: "POST", headers: { "x-herdr-update": "1" }, signal: AbortSignal.timeout(15_000), redirect: "error" });
+      response = await outboundFetch(`${url}/api/relay/code`, { method: "POST", headers: { "x-herdr-update": "1" }, signal: AbortSignal.timeout(15_000), redirect: "error" });
     } catch {
       throw new TailnetPcError("unreachable", "That PC did not answer. Check that it is on, then try again.");
     }

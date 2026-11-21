@@ -24,6 +24,7 @@ import { RelayPairingApprovals } from "./pairing-approvals.ts";
 import { RelayPairCodes } from "./pair-code.ts";
 import { RelayPassKeeper, type RelayPassClock } from "./pass.ts";
 import type { RelayPassNotice } from "./link.ts";
+import { outboundStatus, proxyOnly, relayFetch, relayRefusal } from "../outbound.ts";
 
 export const ACCOUNT_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
@@ -103,13 +104,13 @@ const REGIONAL_SHARE = 0.5;
 const PROBE_TIMEOUT_MS = 5_000;
 
 /** The best of three `/health` round trips; the first one opens the connection and is not counted. */
-async function probeRelay(relay: string, signal: AbortSignal): Promise<number | null> {
+export async function probeRelay(relay: string, signal: AbortSignal): Promise<number | null> {
   const url = new URL("/health", relay.replace(/^wss:/, "https:"));
   let best: number | null = null;
   try {
     for (let attempt = 0; attempt < 3; attempt++) {
       const started = performance.now();
-      const response = await fetch(url, { signal: AbortSignal.any([signal, AbortSignal.timeout(PROBE_TIMEOUT_MS)]), cache: "no-store" });
+      const response = await relayFetch(url, { signal: AbortSignal.any([signal, AbortSignal.timeout(PROBE_TIMEOUT_MS)]), cache: "no-store" });
       await response.arrayBuffer();
       if (!response.ok) return null;
       const elapsed = performance.now() - started;
@@ -225,7 +226,8 @@ export class RelayService {
     return { phase: this.phase, relay: this.advertised, app: this.app,
       sessions: (this.link?.sessions ?? 0) + (this.regionalLink?.sessions ?? 0) + (this.directCarrier?.sessions ?? 0),
       blocked: this.blocked, error: this.error, error_code: this.exactErrorCode(), account_named: this.savedRelayAccount() !== null,
-      ...(this.options.direct ? { direct: { on: this.directEnabled(), carriers: this.directCarrier?.advertised(true) ?? [] } } : {}),
+      ...(this.options.direct && this.directAvailable ? { direct: { on: this.directEnabled(), carriers: this.directCarrier?.advertised(true) ?? [] } } : {}),
+      ...(proxyOnly() ? { outbound: { proxy_only: true, proxy: outboundStatus().proxy, refusal: this.phase === "online" ? null : relayRefusal() } } : {}),
       ...(this.passKeeper ? { pass: { state: this.passState(this.passKeeper), relay: this.passNotice?.state ?? null, enforce_at: this.passNotice?.enforce_at ?? null, refused: this.passRefused,
         // a relay that refuses this PC for its pass enforces them, whatever it last said in a `sync`
         enforced: this.passRefused || relayEnforcesPasses(this.passNotice, Date.now()), ...this.newSessions() } } : {}) };
@@ -373,7 +375,8 @@ export class RelayService {
     return this.directOn;
   }
 
-  get directAvailable(): boolean { return this.options.direct !== undefined && (this.services?.options.profile !== "machine" || MACHINE_DIRECT_CARRIER_ENABLED); }
+  /** Proxy-only mode turns every local-network carrier off: no direct listener, none advertised. */
+  get directAvailable(): boolean { return this.options.direct !== undefined && !proxyOnly() && (this.services?.options.profile !== "machine" || MACHINE_DIRECT_CARRIER_ENABLED); }
 
   /** Turns direct connections on this PC's networks on or off, kept across restarts; off ends every direct session. */
   async setDirect(on: boolean): Promise<RelayStatus> {

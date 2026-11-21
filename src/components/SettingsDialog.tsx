@@ -58,7 +58,7 @@ import { useMachineSessions } from "../lib/machineSessionContext.tsx";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { RuntimeMove } from "./RuntimeMove.tsx";
 import { SignOutRow } from "./SignOutRow.tsx";
-import { failureText, openOwnOffer, RelayDirectRow, statusText } from "./RelayPanel.tsx";
+import { failureText, openOwnOffer, ProxyOnlyRows, RelayDirectRow, statusText } from "./RelayPanel.tsx";
 import { AccountSection, accountServiceHere, type AccountState } from "./AccountSection.tsx";
 import { shellAccountServiceOf } from "../lib/account/service.ts";
 import { AccountPcRows, NoAccountPcHint, removePcFromAccount } from "./AccountPcs.tsx";
@@ -1367,6 +1367,7 @@ function RelayControls({ relay, closesGate, onReset }: { relay: RelayState; clos
       <SettingsRow label={switchLabel} keywords={t("Ovis relay")} description={statusText(t, status)}>
         {status.blocked === null && <Toggle label={switchLabel} checked={on} onChange={(next) => { if (!pending) void run(next ? "start" : "stop"); }} />}
       </SettingsRow>
+      <ProxyOnlyRows status={status} />
       {closesGate && !on && status.blocked === null && <p className="settings-item settings-condition">{t("Turning on the relay closes the device gate: a new browser then needs a pairing code or the access token.")}</p>}
       {error !== null && <p className="settings-item settings-hint relay-error" role="alert">{error}</p>}
       {/* a serve-only install refuses the reset too; an unreadable identity is what the reset mends */}

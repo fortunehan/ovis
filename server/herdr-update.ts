@@ -23,6 +23,7 @@ import { herdrSocketPath } from "./herdr/client.ts";
 import { capabilities } from "./runtime/capabilities.ts";
 import { jsonResponse } from "./http.ts";
 import { updateRequestAllowed } from "./update-api.ts";
+import { networkEnv } from "./outbound.ts";
 
 /** a download of herdr's binary (about 30 MB) on a slow link, then the handoff */
 const UPDATE_TIMEOUT_MS = 10 * 60_000;
@@ -96,7 +97,8 @@ export class HerdrUpdater {
 
   private env(): Record<string, string> {
     const env: Record<string, string> = {};
-    for (const [name, value] of Object.entries(process.env)) {
+    // `herdr update` downloads: in proxy-only mode it gets the outbound proxy as every network child does
+    for (const [name, value] of Object.entries(networkEnv())) {
       if (value !== undefined && !name.startsWith("HERDR_")) env[name] = value;
     }
     env["HERDR_SOCKET_PATH"] = this.options.socketPath ?? herdrSocketPath();

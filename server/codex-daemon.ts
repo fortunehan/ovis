@@ -8,6 +8,7 @@ import { registerCatalogSource } from "./catalog-sources.ts";
 import type { CatalogSource } from "./catalog-sources.ts";
 import { defaultCodexHome, paneCodexProcess } from "./codex.ts";
 import { processEnviron } from "./omo.ts";
+import { localWebSocket } from "./outbound.ts";
 
 /**
  * Skills from the Codex app-server daemon every Codex TUI shares since 0.157, read-only.
@@ -128,7 +129,7 @@ export class DaemonConnection {
   }
 
   static start(path: string, onChanged: () => void, onClose: () => void): DaemonConnection {
-    return new DaemonConnection(new WebSocket(`ws+unix://${path}:/`), onChanged, onClose);
+    return new DaemonConnection(localWebSocket(`ws+unix://${path}:/`), onChanged, onClose);
   }
 
   /** The handshake: the upgrade, then initialize (experimentalApi false) and initialized. */

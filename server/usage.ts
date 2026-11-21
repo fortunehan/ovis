@@ -29,6 +29,7 @@ import { opencodeDatabasePath } from "./opencode.ts";
 import { recordedUsages, type RecordedReading, type RecordedSource, type RecordedUsage } from "./usage-recorded.ts";
 import { gjcRecorded } from "./usage-recorded-gjc.ts";
 import { ompRecorded } from "./usage-recorded-omp.ts";
+import { outboundFetch } from "./outbound.ts";
 
 export const FRESH_MS = 5 * 60_000;
 export const MIN_REFRESH_MS = 30_000;
@@ -993,7 +994,7 @@ export function systemUsageContext(): UsageContext {
     home: homedir(),
     env: process.env,
     platform: process.platform,
-    fetch: (url, init) => fetch(url, init),
+    fetch: (url, init) => outboundFetch(url, init),
     keychain: readKeychain,
     run: runCommand,
     has: (command) => Bun.which(command) !== null,

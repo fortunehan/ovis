@@ -16,6 +16,7 @@ import { snapshotWithoutHiddenTokens, withoutHiddenTokens } from "./herdr-sideba
 import { parseJson, readCapped, REMOTE_LIMITS, RemoteResponseInvalid, RemoteResponseTooLarge } from "./remote-json.ts";
 import { answerCode, moveAll, moveAllPlans, PC_MOVE_PATH, PC_UPDATE_REQUIRED, tooOldToMove } from "./remote-move.ts";
 import { ADDRESS_PC_WORDS, AddressPcError } from "./address-pc.ts";
+import { LocalNetworkOffError, outboundFetch } from "./outbound.ts";
 
 const fail = (code: string, message: string, status: number) => jsonResponse({ error: { code, message } }, status);
 /**
@@ -495,7 +496,7 @@ export async function handleMachineRequest(request: Request, manager: MachineMan
         const range = request.headers.get("range");
         if (range) headers.set("range", range);
         try {
-          const response = await fetch(`${endpoint.url}/api/${path}${url.search}`, { method: request.method, headers, redirect: "error", signal: request.signal });
+          const response = await outboundFetch(`${endpoint.url}/api/${path}${url.search}`, { method: request.method, headers, redirect: "error", signal: request.signal });
           const passed = new Headers({ "cache-control": "private, no-store", "x-content-type-options": "nosniff" });
           for (const name of ["content-type", "content-length", "content-range", "accept-ranges", "content-disposition"]) {
             const value = response.headers.get(name);
@@ -527,7 +528,7 @@ export async function handleMachineRequest(request: Request, manager: MachineMan
       const untrack = manager.trackTerminal(id, () => abort.abort());
       const moved = path === "workspace/move" && request.method === "POST" ? manager.refreshAfterMove(id) : null;
       try {
-        const response = await fetch(target, { method: request.method, headers, body: ["GET", "HEAD"].includes(request.method) ? undefined : request.body, redirect: "error", signal: AbortSignal.any([request.signal, abort.signal, AbortSignal.timeout(path === "runtime/move/install" ? 200_000 : slowMachinePath(path) ? 165_000 : 75_000)]) });
+        const response = await outboundFetch(target, { method: request.method, headers, body: ["GET", "HEAD"].includes(request.method) ? undefined : request.body, redirect: "error", signal: AbortSignal.any([request.signal, abort.signal, AbortSignal.timeout(path === "runtime/move/install" ? 200_000 : slowMachinePath(path) ? 165_000 : 75_000)]) });
         if (moved && response.ok) moved();
         if (movePath && request.method !== "GET" && response.ok) manager.moveOfferSoon(id);
         const etag = response.headers.get("etag");
@@ -567,5 +568,8 @@ export async function handleMachineRequest(request: Request, manager: MachineMan
       finally { untrack(); }
     }
     return fail("not_found", "Unknown PC endpoint", 404);
-  } catch (e) { return fail("machine_request_failed", e instanceof Error ? e.message : String(e), 400); }
+  } catch (e) {
+    if (e instanceof LocalNetworkOffError) return fail("proxy_only", e.message, 409);
+    return fail("machine_request_failed", e instanceof Error ? e.message : String(e), 400);
+  }
 }

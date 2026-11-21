@@ -1,6 +1,7 @@
 import type { PcUpdateOffer } from "../shared/machines.ts";
 import { REVISION, type UpdateStatus, INSTALL_ID } from "../shared/update.ts";
 import { discard, readCappedJson, REMOTE_LIMITS } from "./remote-json.ts";
+import { outboundFetch } from "./outbound.ts";
 
 
 export const OWN_UPDATE_LIMIT_MS = 15 * 60_000;
@@ -27,7 +28,7 @@ export function offerFromStatus(status: unknown): PcUpdateOffer | null {
 
 /** Its update status through its connection, or null when it does not answer readably. Redirects are never followed. */
 export async function readOwnStatus(endpoint: Endpoint, signal?: AbortSignal): Promise<Partial<UpdateStatus> | null> {
-  const response = await fetch(`${endpoint.url}/api/updates`, { headers: { authorization: `Bearer ${endpoint.token}` }, redirect: "manual",
+  const response = await outboundFetch(`${endpoint.url}/api/updates`, { headers: { authorization: `Bearer ${endpoint.token}` }, redirect: "manual",
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(BRIDGE_ANSWER_MS)]) : AbortSignal.timeout(BRIDGE_ANSWER_MS) });
   if (!response.ok) { await discard(response); return null; }
   return await readCappedJson<Partial<UpdateStatus> | null>(response, REMOTE_LIMITS.ownUpdates);
@@ -52,7 +53,7 @@ export async function cancelOwnUpdate(endpoint: Endpoint | undefined, last: Part
   // only the install this app asked for, by the id its 202 gave: without it (its answer cut off, an older Ovis) nothing is asked
   if (!endpoint || last?.install_cancellable !== true || !installId) return "continues";
   try {
-    const response = await fetch(`${endpoint.url}/api/updates/cancel`, { method: "POST", redirect: "manual", body: JSON.stringify({ install_id: installId }),
+    const response = await outboundFetch(`${endpoint.url}/api/updates/cancel`, { method: "POST", redirect: "manual", body: JSON.stringify({ install_id: installId }),
       headers: { authorization: `Bearer ${endpoint.token}`, "x-herdr-update": "1", "content-type": "application/json" }, signal: AbortSignal.timeout(BRIDGE_ANSWER_MS) });
     await discard(response);
     if (response.status !== 202) return "continues";
@@ -123,7 +124,7 @@ async function followOwn(options: OwnUpdateOptions, state: { last: Partial<Updat
     if (!endpoint) throw new Error("This PC is not connected; update it once it is back.");
     cancelled();
     let response: Response;
-    try { response = await fetch(`${endpoint.url}/api/updates/install`, { method: "POST", redirect: "manual", body: JSON.stringify({ expected_revision: revision }),
+    try { response = await outboundFetch(`${endpoint.url}/api/updates/install`, { method: "POST", redirect: "manual", body: JSON.stringify({ expected_revision: revision }),
       headers: { authorization: `Bearer ${endpoint.token}`, "x-herdr-update": "1", "content-type": "application/json" },
       signal: AbortSignal.any([signal, AbortSignal.timeout(BRIDGE_ANSWER_MS)]) }); } catch (error) { if (signal.aborted) state.asked = true; throw error; }
     if (response.status === 202) { state.asked = true; state.installId = await installIdOf(response); break; }

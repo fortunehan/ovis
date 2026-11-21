@@ -415,7 +415,7 @@ export class Telemetry {
     stateDir: string;
     version: string;
     env: Env;
-    fetch: typeof fetch;
+    fetch: (input: string, init?: RequestInit) => Promise<Response>;
     url?: string;
     activeUrl?: string;
     countsUrl?: string;
