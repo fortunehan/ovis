@@ -104,7 +104,7 @@ const REGIONAL_SHARE = 0.5;
 const PROBE_TIMEOUT_MS = 5_000;
 
 /** The best of three `/health` round trips; the first one opens the connection and is not counted. */
-async function probeRelay(relay: string, signal: AbortSignal): Promise<number | null> {
+export async function probeRelay(relay: string, signal: AbortSignal): Promise<number | null> {
   const url = new URL("/health", relay.replace(/^wss:/, "https:"));
   let best: number | null = null;
   try {

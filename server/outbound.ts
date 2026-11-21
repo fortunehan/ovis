@@ -74,17 +74,52 @@ export function readOutboundPolicy(env: Record<string, string | undefined>): Out
   return { proxyOnly, proxy: raw, display: describeProxy(url!), invalid: null, bypass, plainProxy };
 }
 
-let policy: OutboundPolicy = readOutboundPolicy(process.env);
+let policy: OutboundPolicy = readOutboundPolicy({});
 let latestRefusal: OutboundRefusal | null = null;
 let latestRelayRefusal: OutboundRefusal | null = null;
+/** This process's own NO_PROXY, kept aside while proxy-only mode is on (see `withoutBypass`); null while it is in place. */
+let keptBypass: { NO_PROXY: string | undefined; no_proxy: string | undefined } | null = null;
+
+/**
+ * Bun applies the process's NO_PROXY to every fetch and WebSocket, even one given a proxy explicitly, so relay traffic to
+ * a host on this machine's bypass list (here: every private range) would leave directly. In proxy-only mode NO_PROXY is
+ * therefore taken out of this process: Bun then proxies everything it is told to, and this module applies the bypass
+ * list itself. Bun reads it synchronously as a fetch or a socket starts (checked on Bun 1.4.4), which `direct` relies on.
+ */
+function withoutBypass(on: boolean): void {
+  if (on && keptBypass === null) {
+    keptBypass = { NO_PROXY: process.env["NO_PROXY"], no_proxy: process.env["no_proxy"] };
+    delete process.env["NO_PROXY"];
+    delete process.env["no_proxy"];
+  } else if (!on && keptBypass !== null) {
+    for (const name of ["NO_PROXY", "no_proxy"] as const) if (keptBypass[name] !== undefined) process.env[name] = keptBypass[name];
+    keptBypass = null;
+  }
+}
+
+/** A direct dial in proxy-only mode (this machine, or a host on the bypass list): Bun bypasses its proxy variables for this call only. */
+function direct<T>(dial: () => T): T {
+  if (!policy.proxyOnly) return dial();
+  process.env["NO_PROXY"] = "*";
+  try { return dial(); } finally { delete process.env["NO_PROXY"]; }
+}
+
+/** A dial through the proxy in proxy-only mode: no NO_PROXY of this process may turn it into a direct one. */
+function proxied<T>(dial: () => T): T {
+  if (policy.proxyOnly) { delete process.env["NO_PROXY"]; delete process.env["no_proxy"]; }
+  return dial();
+}
 
 /** Reads the policy again from `env`: the server's start does, and tests with an environment of their own. */
 export function configureOutbound(env: Record<string, string | undefined> = process.env): OutboundPolicy {
-  policy = readOutboundPolicy(env);
+  // this process's own bypass list stays the policy's while it is kept aside
+  policy = readOutboundPolicy(env === process.env && keptBypass !== null ? { ...process.env, ...keptBypass } : env);
+  withoutBypass(policy.proxyOnly);
   latestRefusal = null;
   latestRelayRefusal = null;
   return policy;
 }
+configureOutbound(process.env);
 
 export function outboundPolicy(): OutboundPolicy { return policy; }
 export function proxyOnly(): boolean { return policy.proxyOnly; }
@@ -204,9 +239,9 @@ export async function outboundFetch(input: string | URL | Request, init?: FetchI
   if (init?.unix !== undefined) return nativeFetch(input, init);
   const url = urlOf(input);
   const proxy = route(url, kind, false);
-  if (proxy === undefined || proxy === null) return nativeFetch(input, init);
+  if (proxy === undefined || proxy === null) return direct(() => nativeFetch(input, init));
   try {
-    const response = await nativeFetch(input, { ...init, proxy });
+    const response = await proxied(() => nativeFetch(input, { ...init, proxy }));
     if (kind === "relay") latestRelayRefusal = null;
     return response;
   } catch (error) {
@@ -226,7 +261,8 @@ export function outboundWebSocket(address: string, init: { headers?: Record<stri
   const url = new URL(address);
   const proxy = route(url, kind, true);
   const options = { ...init, ...(proxy ? { proxy } : {}) };
-  const socket = new NativeWebSocket(address, (Object.keys(options).length > 0 ? options : undefined) as unknown as string[]);
+  const open = () => new NativeWebSocket(address, (Object.keys(options).length > 0 ? options : undefined) as unknown as string[]);
+  const socket = proxy ? proxied(open) : open();
   if (proxy && policy.proxyOnly) {
     let opened = false;
     socket.addEventListener("open", () => { opened = true; if (kind === "relay") latestRelayRefusal = null; });
@@ -247,7 +283,7 @@ function assertLocal(url: URL, unix: boolean): void {
 /** This machine only (loopback or a unix socket): never proxied, and refused for anything else. */
 export function localFetch(input: string | URL | Request, init?: FetchInit): Promise<Response> {
   assertLocal(urlOf(input), init?.unix !== undefined);
-  return nativeFetch(input, init);
+  return direct(() => nativeFetch(input, init));
 }
 
 export function localWebSocket(address: string, init?: { headers?: Record<string, string> }): WebSocket {
@@ -303,6 +339,8 @@ export function networkEnv(base: Record<string, string | undefined> = process.en
   if (!policy.proxyOnly || policy.proxy === null) return { ...base };
   const env = { ...base };
   for (const name of PROXY_NAMES) env[name] = policy.proxy;
+  // the child honours the bypass list this process keeps aside (withoutBypass)
+  if (base === process.env && keptBypass !== null) for (const name of ["NO_PROXY", "no_proxy"] as const) if (keptBypass[name] !== undefined) env[name] = keptBypass[name];
   return env;
 }
 
@@ -321,7 +359,7 @@ export function installOutboundGuard(): () => void {
   const guardedFetch = ((input: string | URL | Request, init?: FetchInit) => {
     let url: URL;
     try { url = urlOf(input); } catch (error) { return Promise.reject(error); }
-    if (init?.unix !== undefined || isLocalUrl(url)) return nativeFetch(input, init);
+    if (init?.unix !== undefined || isLocalUrl(url)) return direct(() => nativeFetch(input, init));
     return Promise.reject(refuse("other", url, `a direct connection to ${targetOf(url)} was refused: it did not go through the outbound proxy`));
   }) as typeof fetch;
   guardedFetch.preconnect = () => {};

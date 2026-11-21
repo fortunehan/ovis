@@ -16,7 +16,7 @@ import { snapshotWithoutHiddenTokens, withoutHiddenTokens } from "./herdr-sideba
 import { parseJson, readCapped, REMOTE_LIMITS, RemoteResponseInvalid, RemoteResponseTooLarge } from "./remote-json.ts";
 import { answerCode, moveAll, moveAllPlans, PC_MOVE_PATH, PC_UPDATE_REQUIRED, tooOldToMove } from "./remote-move.ts";
 import { ADDRESS_PC_WORDS, AddressPcError } from "./address-pc.ts";
-import { outboundFetch } from "./outbound.ts";
+import { LocalNetworkOffError, outboundFetch } from "./outbound.ts";
 
 const fail = (code: string, message: string, status: number) => jsonResponse({ error: { code, message } }, status);
 /**
@@ -568,5 +568,8 @@ export async function handleMachineRequest(request: Request, manager: MachineMan
       finally { untrack(); }
     }
     return fail("not_found", "Unknown PC endpoint", 404);
-  } catch (e) { return fail("machine_request_failed", e instanceof Error ? e.message : String(e), 400); }
+  } catch (e) {
+    if (e instanceof LocalNetworkOffError) return fail("proxy_only", e.message, 409);
+    return fail("machine_request_failed", e instanceof Error ? e.message : String(e), 400);
+  }
 }

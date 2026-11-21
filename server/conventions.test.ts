@@ -303,15 +303,19 @@ describe("server entries", () => {
 describe("outbound connections", () => {
   // Proxy-only mode (docs/relay.md) holds only while every dial goes through server/outbound.ts: a bare fetch or
   // WebSocket would connect directly, past the outbound proxy and the relay's NO_PROXY rule.
-  const DIAL = /(?<![\w$.])fetch\s*\(|\bnew\s+WebSocket\s*\(|\bglobalThis\s*\.\s*(?:fetch|WebSocket)\b/;
+  /** the global `fetch` called or passed on (not a property, an object key or a type), and the global WebSocket */
+  const DIAL = /(?<![\w$.]|typeof\s+)fetch(?![\w$])(?!\s*\??:)|\bnew\s+WebSocket\s*\(|\bglobalThis\s*\.\s*(?:fetch|WebSocket)\b/;
   /** `fetch(request, server) {`: a Bun.serve handler, and `fetch(url: string): Promise<Response>;` a signature, not calls */
   const HANDLER = /^\s*(?:async\s+)?fetch\s*\([^)]*\)\s*(?:\{|:[^{;]*[{;])\s*$/;
-  const dials = (fileList: string[]) => matches(fileList, DIAL).filter((match) => !HANDLER.test(match.code.split("\n")[lineOf(match.code, match.index) - 1]!));
+  const dials = (fileList: string[]) => fileList.flatMap((file) => {
+    const code = stripComments(read(file), { strings: true });
+    return code.split("\n").flatMap((line, index) => DIAL.test(line) && !HANDLER.test(line) ? [`${file}:${index + 1}: ${line.trim().slice(0, 160)}`] : []);
+  });
   const code = (): string[] => files("{server,shared}/**/*.{ts,mjs,js}")
-    .filter((file) => !/\.test\.ts$|\.fake\.ts$|\.fixture\.ts$|test-helpers\.ts$/.test(file) && file !== "server/outbound.ts" && !file.includes("/node_modules/"));
+    .filter((file) => !/\.test\.ts$|[.-]fake\.ts$|\.fixture\.ts$|test-helpers\.ts$/.test(file) && file !== "server/outbound.ts" && !file.includes("/node_modules/"));
 
   it("dials only through server/outbound.ts", () => {
-    fail(dials(code()).map((match) => match.at),
+    fail(dials(code()),
       "Open connections through server/outbound.ts: outboundFetch/relayFetch and outboundWebSocket/relayWebSocket beyond this machine, localFetch/localWebSocket to it. Shared code takes its socket factory from its caller.");
   });
 
@@ -327,5 +331,9 @@ describe("outbound connections", () => {
     expect(found("  fetch(url);")).toBe(true);
     expect(found("await this.options.fetch(url, init);")).toBe(false);
     expect(found("await outboundFetch(url, init);")).toBe(false);
+    expect(found("const response = await (options.fetch ?? fetch)(url);")).toBe(true);
+    expect(found("new VoiceService({ stateDir, fetch });")).toBe(true);
+    expect(found("  fetch?: typeof fetch;")).toBe(false);
+    expect(found("const voice = new VoiceService({ fetch: outboundFetch });")).toBe(false);
   });
 });

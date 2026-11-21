@@ -16,7 +16,7 @@ import { regionalAppReady, regionalAppUrl } from "../shared/relay-regions.ts";
 const regional = regionalAppUrl(window.location, "Capacitor" in window);
 if (regional !== null) {
   const offer = window.location.hash;
-  void regionalAppReady(new URL(regional).origin).then((ready) => {
+  void regionalAppReady(new URL(regional).origin, fetch).then((ready) => {
     if (ready && window.location.hash === offer) window.location.replace(regional);
   });
 }
