@@ -7,7 +7,8 @@
 .tasks-sidebar {
   display: flex;
   flex-direction: column;
-  padding: var(--space-2) var(--side-gutter) 0;
+  padding: var(--space-2) var(--side-gutter) var(--space-1);
+  border-bottom: 1px solid var(--border);
 }
 
 .tasks-heading {
