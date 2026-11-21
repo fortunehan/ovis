@@ -92,4 +92,9 @@ export const SIDEBAR_JA: Record<string, string> = {
   "No terminal running": "実行中のターミナルなし",
   "On {machine}, can't be opened from this PC": "{machine} で実行中のため、この PC からは開けません",
   "On another machine, can't be opened from this PC": "別のマシンで実行中のため、この PC からは開けません",
+  "Accept": "承認",
+  "Accept {title}?": "{title} を承認しますか？",
+  "Accepting finishes this task and merges its work.": "承認するとこのタスクが完了し、その変更がマージされます。",
+  "Other answer": "その他の回答",
+  "Send answer": "回答を送信",
 };

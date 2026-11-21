@@ -2,7 +2,9 @@
 // counts and a "+N more" line, the drawer button's Needs you count, each kind of row (opens its terminal in chat view,
 // opens an Assistant, another machine, no terminal, an automation's words), a listed task's terminals gone from the
 // workspace list, the agent list and the Inbox, a dropped feed marked reconnecting, and no section and nothing hidden
-// once the list is gone. The list is told as the server tells it (a `shepherdr-tasks` machine event).
+// once the list is gone. The list is told as the server tells it (a `shepherdr-tasks` machine event). Then the row
+// buttons: a question's choice and Other words, and Accept after its confirm sheet on a row of another machine, each
+// sent to this server's POST /api/shepherdr/action as the row offers it, a refusal shown on the row in Shepherdr's words.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -27,7 +29,7 @@ const TASKS: ShepherdrTasks = {
     { kind: "done", label: "Done", count: 5 },
   ],
   rows: [
-    row({ key: "need:INF-3/worker:q1", group: "needs", type: "need", ref: "INF-3", title: "INF-3 · Needs you", body: "Restore from last night?", name: "Why did the backup fail?", space: "infra", line: "Restore from last night?", progress: 60, left: "20m", open: { kind: "terminal", pane_id: "w1H:p1" }, terminals: ["w1H:p1"] }),
+    row({ key: "need:INF-3/worker:q1", group: "needs", type: "need", ref: "INF-3", title: "INF-3 · Needs you", body: "Restore from last night?", name: "Why did the backup fail?", space: "infra", line: "Restore from last night?", progress: 60, left: "20m", open: { kind: "terminal", pane_id: "w1H:p1" }, terminals: ["w1H:p1"], answer: { chat: "INF-3/worker", question: "q1", choices: [{ i: 0, label: "Restore" }, { i: 1, label: "Skip" }], other: true } }),
     row({ key: "need:pweb:q2", group: "needs", type: "need", assistant: true, title: "Assistant · Needs you", body: "Which branch should the export fix go on?", space: "web-dashboard", open: { kind: "terminal", pane_id: "w1D:p1" } }),
     row({ key: "auto:nightly", group: "needs", title: "nightly-tests · Didn't run", body: "The folder is gone", space: "checkout-api", open: { kind: "words" } }),
     row({ key: "ready:m3:VIBE-10", group: "ready", ref: "VIBE-10", title: "VIBE-10 · Finished", body: "Voice: fix lag", name: "Voice: fix lag", space: "Home", machine: "Mac mini", line: "Ready 2h ago", open: { kind: "other-machine", machine: "Mac mini" }, accept: { task: "m3:VIBE-10" } }),
@@ -47,6 +49,16 @@ const patch = `(() => {
   const event = () => JSON.stringify(tasks ? { type: "shepherdr-tasks", tasks } : { type: "shepherdr-tasks" });
   window.tasksSet = (next) => { tasks = next; for (const source of sources) source.onmessage?.(new MessageEvent("message", { data: event() })); };
   window.tasksNow = () => tasks;
+  window.tasksActions = [];
+  window.tasksAnswer = null;
+  const demoFetch = window.fetch;
+  window.fetch = (input, init) => {
+    const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.href);
+    if (url.pathname !== "/api/shepherdr/action") return demoFetch(input, init);
+    window.tasksActions.push(JSON.parse(init.body));
+    const answer = window.tasksAnswer ?? { status: 200, body: { ok: true } };
+    return Promise.resolve(new Response(JSON.stringify(answer.body), { status: answer.status, headers: { "content-type": "application/json" } }));
+  };
   window.EventSource = class extends EventTarget {
     constructor(url, options) {
       super(); this.inner = new EventSourceDemo(url, options); this.readyState = 1;
@@ -66,6 +78,8 @@ declare global {
   interface Window {
     tasksSet(next: ShepherdrTasks | null): void;
     tasksNow(): ShepherdrTasks | null;
+    tasksActions: unknown[];
+    tasksAnswer: { status: number; body: unknown } | null;
   }
 }
 
@@ -162,6 +176,42 @@ try {
           assert.ok((await workspaces(page)).includes("w1H"), "with no list, a task's workspace is back");
           if (phone) assert.equal(await page.locator("#drawer-toggle .header-more-dot").count(), 0);
 
+          await page.evaluate((tasks) => window.tasksSet(tasks), TASKS);
+          await drawer(page, phone);
+          const question = section(page).locator("li", { has: page.locator(".task-row-ref", { hasText: "INF-3" }) });
+          assert.deepEqual(await question.locator(".task-row-buttons button").allTextContents(), ["Restore", "Skip"], "a question's own choices, and only there");
+          assert.equal(await section(page).locator(".task-row-actions").count(), 2, "buttons only on the rows the feed offers them on");
+          await page.evaluate(() => { window.tasksAnswer = { status: 409, body: { error: { code: "shepherdr_refused", message: "That question was answered already." } } }; });
+          await question.getByRole("button", { name: "Skip" }).click();
+          await question.locator(".task-row-error", { hasText: "That question was answered already." }).waitFor();
+          assert.deepEqual(await page.evaluate(() => window.tasksActions), [{ key: "need:INF-3/worker:q1", choice: 1 }]);
+          if (evidence && theme === "light") await question.screenshot({ path: join(evidence, `tasks-refused-${width}.png`) });
+          await page.evaluate(() => { window.tasksAnswer = null; window.tasksActions = []; });
+          await question.getByRole("textbox", { name: "Other answer" }).fill("Restore Tuesday's instead");
+          await question.getByRole("button", { name: "Send answer" }).click();
+          await page.waitForFunction(() => window.tasksActions.length === 1);
+          assert.deepEqual(await page.evaluate(() => window.tasksActions), [{ key: "need:INF-3/worker:q1", other: "Restore Tuesday's instead" }]);
+          await question.locator(".task-row-error").waitFor({ state: "detached" });
+
+          const ready = section(page).locator("li", { has: page.locator(".task-row.is-ready") });
+          await page.evaluate(() => { window.tasksActions = []; });
+          await ready.getByRole("button", { name: "Accept" }).click();
+          const sheet = page.getByRole("alertdialog");
+          await sheet.waitFor();
+          assert.equal((await sheet.locator(".modal-title").textContent())?.trim(), "Accept VIBE-10 · Voice: fix lag?", "the confirm sheet names the task");
+          assert.equal((await sheet.locator(".confirm-body").textContent())?.trim(), "Ready 2h ago", "and shows its summary");
+          assert.deepEqual(await page.evaluate(() => window.tasksActions), [], "nothing is sent before the sheet is confirmed");
+          if (evidence && theme === "light") {
+            await sheet.evaluate((element) => Promise.all((element.closest(".modal-scrim") ?? element).getAnimations({ subtree: true }).map((animation) => animation.finished)));
+            await page.screenshot({ path: join(evidence, `tasks-accept-sheet-${width}.png`) });
+          }
+          await sheet.getByRole("button", { name: "Accept" }).click();
+          await sheet.waitFor({ state: "detached" });
+          await page.waitForFunction(() => window.tasksActions.length === 1);
+          assert.deepEqual(await page.evaluate(() => window.tasksActions), [{ key: "ready:m3:VIBE-10", accept: true }], "a row on another machine keeps its Accept");
+          await page.evaluate(() => { const now = window.tasksNow()!; window.tasksSet({ ...now, rows: now.rows.filter((row) => row.group !== "ready"), groups: now.groups.map((group) => group.kind === "ready" ? { ...group, count: 0 } : group) }); });
+          await section(page).locator(".task-row.is-ready").waitFor({ state: "detached" });
+
           if (!phone) {
             await page.evaluate(() => window.tasksSet(null));
             await page.evaluate((tasks) => window.tasksSet(tasks), TASKS);
@@ -174,7 +224,7 @@ try {
           }
           assert.deepEqual(errors, []);
         } finally { await close(); }
-        console.log(`PASS ${width}px ${theme}: groups, counts and +N more as told, the Needs you badge, every kind of row, task terminals hidden while listed, reconnecting, and nothing once the list is gone`);
+        console.log(`PASS ${width}px ${theme}: groups, counts and +N more as told, the Needs you badge, every kind of row, task terminals hidden while listed, reconnecting, nothing once the list is gone, and the row buttons sent as offered`);
       }
     } finally { await browser.close(); }
   } finally { await server.stop(true); }

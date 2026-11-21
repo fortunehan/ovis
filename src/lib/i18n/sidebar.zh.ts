@@ -92,4 +92,9 @@ export const SIDEBAR_ZH: Record<string, string> = {
   "No terminal running": "没有运行中的终端",
   "On {machine}, can't be opened from this PC": "在 {machine} 上运行，无法从这台电脑打开",
   "On another machine, can't be opened from this PC": "在另一台机器上运行，无法从这台电脑打开",
+  "Accept": "接受",
+  "Accept {title}?": "接受 {title}？",
+  "Accepting finishes this task and merges its work.": "接受会完成这个任务并合并它的改动。",
+  "Other answer": "其他回答",
+  "Send answer": "发送回答",
 };

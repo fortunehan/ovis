@@ -12,7 +12,8 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { ShepherdrRowOpen, ShepherdrTaskGroup, ShepherdrTaskRow, ShepherdrTasks } from "../shared/shepherdr-tasks.ts";
+import { SHEPHERDR_OTHER_MAX, type ShepherdrActionRequest, type ShepherdrRowOpen, type ShepherdrTaskGroup, type ShepherdrTaskRow, type ShepherdrTasks } from "../shared/shepherdr-tasks.ts";
+import { badRequest, conflictResponse, isJsonObject, jsonResponse, readJsonObject, setRequestRoute } from "./http.ts";
 import { localFetch } from "./outbound.ts";
 
 export const GLANCE_FORMAT = 1;
@@ -24,6 +25,10 @@ export const SILENT_MS = 300_000;
 export const RECHECK_MS = 60_000;
 const RETRY_MS = [2_000, 5_000, 10_000, 30_000] as const;
 const ASK_TIMEOUT_MS = 5_000;
+/** an action's answer: an Accept only starts herdr-task's merge (it finishes in the background) */
+const ACTION_TIMEOUT_MS = 30_000;
+/** the most of Shepherdr's refusal shown on a row */
+const REFUSAL_MAX = 300;
 
 export const TASK_LABEL = "herdr.task";
 export const ROLE_LABEL = "herdr.role";
@@ -234,6 +239,39 @@ export function sseEvents(buffer: string): { events: { event: string; data: stri
 
 type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
 
+/** What Shepherdr made of an action: done, refused in its own words, or no Shepherdr to ask. */
+export type ShepherdrActOutcome = { ok: true } | { ok: false; reason: "refused"; message: string } | { ok: false; reason: "absent" | "silent" };
+
+function refusalWords(value: unknown, status: number): string {
+  const words = typeof value === "string" ? value.trim() : "";
+  return words === "" ? `Shepherdr refused it (${status}).` : words.slice(0, REFUSAL_MAX);
+}
+
+/**
+ * Shepherdr's action for a row the Tasks section shows, as the feed documents it (docs/glance.md, "Acting on an item"):
+ * only what that row offers, so a page can't send Shepherdr anything else. Null: the row offers no such thing.
+ */
+export function actionFor(row: ShepherdrTaskRow, request: ShepherdrActionRequest): Record<string, unknown> | null {
+  if ("accept" in request) return row.accept ? { type: "accept", task: row.accept.task } : null;
+  const answer = row.answer;
+  if (!answer) return null;
+  if ("choice" in request) return answer.choices.some((choice) => choice.i === request.choice) ? { type: "answer", chat: answer.chat, question: answer.question, choice: request.choice, fromAlert: true } : null;
+  const words = request.other.trim();
+  return answer.other && words !== "" ? { type: "answer", chat: answer.chat, question: answer.question, other: words, fromAlert: true } : null;
+}
+
+/** The body of POST /api/shepherdr/action, or null when it is none of its shapes. */
+export function readActionRequest(value: Record<string, unknown>): ShepherdrActionRequest | null {
+  const key = value["key"];
+  if (typeof key !== "string" || key === "" || key.length > 400) return null;
+  const given = ["accept", "choice", "other"].filter((field) => field in value);
+  if (given.length !== 1) return null;
+  if (value["accept"] === true) return { key, accept: true };
+  if (Number.isInteger(value["choice"]) && (value["choice"] as number) >= 0) return { key, choice: value["choice"] as number };
+  if (typeof value["other"] === "string" && value["other"].length <= SHEPHERDR_OTHER_MAX) return { key, other: value["other"] };
+  return null;
+}
+
 /** Why the feed is not read now: `absent` (no Shepherdr here: drop the list at once) or `dropped` (keep it a while). */
 type Outcome = "absent" | "dropped";
 
@@ -271,6 +309,27 @@ export class ShepherdrFeed {
     this.abort?.abort();
     if (this.staleTimer) clearTimeout(this.staleTimer);
     if (this.retryTimer) clearTimeout(this.retryTimer);
+  }
+
+  /**
+   * One of Shepherdr's actions (POST /api/action), sent as the feed is read: only to the service its file names and whose
+   * health answers that id, over loopback with the token and no Origin. Shepherdr's own words when it refuses.
+   */
+  async act(body: Record<string, unknown>): Promise<ShepherdrActOutcome> {
+    const signal = AbortSignal.timeout(ACTION_TIMEOUT_MS);
+    const found = await this.service(signal).catch((): Outcome => "dropped");
+    if (typeof found === "string") return { ok: false, reason: "absent" };
+    let answer: Response;
+    let words: string;
+    try {
+      answer = await this.fetch(`${found.base}/api/action`, { method: "POST", headers: { authorization: `Bearer ${found.token}`, "content-type": "application/json" }, body: JSON.stringify(body), signal });
+      words = await answer.text();
+    } catch { return { ok: false, reason: "silent" }; }
+    let parsed: unknown = null;
+    try { parsed = JSON.parse(words); } catch {}
+    if (!answer.ok) return { ok: false, reason: "refused", message: refusalWords(isRecord(parsed) ? parsed["error"] : words, answer.status) };
+    if (isRecord(parsed) && parsed["ok"] === false) return { ok: false, reason: "refused", message: refusalWords(parsed["error"], answer.status) };
+    return { ok: true };
   }
 
   private paths(): ShepherdrPaths {
@@ -376,6 +435,29 @@ export class ShepherdrFeed {
   }
 }
 
+export const SHEPHERDR_ACTION_PATH = "/api/shepherdr/action";
+
+/**
+ * POST /api/shepherdr/action { key, accept | choice | other } -> { ok: true }. Refusals: 400 invalid_body, 409 card_gone
+ * (the row isn't listed now), 409 not_offered (it offers no such button), 409 shepherdr_refused (Shepherdr's own words),
+ * 503 no_shepherdr, 504 shepherdr_silent. No retry: the live feed then updates the row.
+ */
+export async function handleShepherdrActionRequest(request: Request, service: Pick<ShepherdrTasksService, "act"> | null): Promise<Response> {
+  setRequestRoute(SHEPHERDR_ACTION_PATH);
+  if (request.method !== "POST") return jsonResponse({ error: { code: "method_not_allowed", message: "Use POST" } }, 405);
+  const body = await readJsonObject(request);
+  if (body instanceof Response) return body;
+  const action = isJsonObject(body) ? readActionRequest(body) : null;
+  if (!action) return badRequest("invalid_body", "Send { key, accept: true }, { key, choice } or { key, other }");
+  const outcome = service ? await service.act(action) : { ok: false as const, reason: "absent" as const };
+  if (outcome === "gone") return conflictResponse("card_gone", "This card isn't listed any more.");
+  if (outcome === "not-offered") return conflictResponse("not_offered", "This card doesn't offer that.");
+  if (outcome.ok) return jsonResponse({ ok: true });
+  if (outcome.reason === "refused") return conflictResponse("shepherdr_refused", outcome.message);
+  if (outcome.reason === "silent") return jsonResponse({ error: { code: "shepherdr_silent", message: "Shepherdr didn't answer." } }, 504);
+  return jsonResponse({ error: { code: "no_shepherdr", message: "Shepherdr isn't running on this PC." } }, 503);
+}
+
 /** The Tasks section's document where this PC reads no Shepherdr: none, ever. */
 export const NO_SHEPHERDR = { get: (): ShepherdrTasks | null => null, subscribe: (): (() => void) => () => {} };
 
@@ -429,6 +511,15 @@ export class ShepherdrTasksService {
   subscribe(listener: (tasks: ShepherdrTasks | null) => void): () => void {
     this.listeners.add(listener);
     return () => { this.listeners.delete(listener); };
+  }
+
+  /** A row's action (POST /api/shepherdr/action), on a row this list shows now. */
+  async act(request: ShepherdrActionRequest): Promise<ShepherdrActOutcome | "gone" | "not-offered"> {
+    const row = this.tasks?.rows.find((candidate) => candidate.key === request.key);
+    if (!row) return "gone";
+    const body = actionFor(row, request);
+    if (!body) return "not-offered";
+    return this.feed.act(body);
   }
 
   /** a terminal started, ended or moved: the rows' terminals are read again soon */

@@ -454,6 +454,10 @@ export type { DevicePairedEvent, DeviceRemovedEvent, PairingIntent, RelayPairing
  *         as it does for a send cancelled before any reply; older servers send neither)
  *  POST   /api/pane/prompt/answer { pane_id, prompt_id, option_index?, option_indices?, custom_text? }
  *         -> { ok: true } | 409 prompt_changed (the screen no longer shows that prompt)
+ *  POST   /api/shepherdr/action { key, accept: true } | { key, choice } | { key, other } -> { ok: true }
+ *         (a Tasks section row's Accept or answer, shared/shepherdr-tasks.ts: the server builds Shepherdr's
+ *         action from the row it lists by that key and passes it to Shepherdr on its PC; 409 card_gone,
+ *         409 not_offered, 409 shepherdr_refused with Shepherdr's words, 503 no_shepherdr, 504 shepherdr_silent)
  *  POST   /api/workspace/create { cwd?, label?, agent?: { kind, name?, args? }, env? }
  *         -> WorkspaceCreated (workspace.create, then agent.start in the root pane when `agent` is given;
  *         omo, gjc and dsh-tui, which herdr cannot start, are typed into the root pane's shell)
