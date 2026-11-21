@@ -3105,6 +3105,7 @@ button {
 
 /* after .icon-button on purpose: same specificity, and hidden must win on desktop */
 .drawer-toggle {
+  position: relative;
   display: none;
 }
 

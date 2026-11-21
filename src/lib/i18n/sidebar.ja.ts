@@ -84,4 +84,12 @@ export const SIDEBAR_JA: Record<string, string> = {
   "Remove from {group}": "{group} から外す",
   "{count} working": "作業中 {count} 件",
   "On this device, an agent's helpers fold into one line under it in the Agents list, with their count. A helper that needs you and the one you selected stay in sight.": "このデバイスのエージェント一覧で、エージェントのヘルパーをその下の 1 行にたたみ、数を表示します。応答が必要なヘルパーと選択中のヘルパーは表示されたままです。",
+  "Tasks": "タスク",
+  "Tasks: {count} need you": "タスク: 応答待ち {count} 件",
+  "Reconnecting to Shepherdr…": "Shepherdr に再接続中…",
+  "+{count} more": "ほか {count} 件",
+  "{left} left": "残り {left}",
+  "No terminal running": "実行中のターミナルなし",
+  "On {machine}, can't be opened from this PC": "{machine} で実行中のため、この PC からは開けません",
+  "On another machine, can't be opened from this PC": "別のマシンで実行中のため、この PC からは開けません",
 };

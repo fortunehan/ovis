@@ -10,6 +10,7 @@ import { withPairedNotice } from "./pairedNotices.ts";
 import { takeAuthTokenFromUrl } from "./authLink.ts";
 import { applyPaneStatus } from "./snapshot.ts";
 import { setAgentRowTokens } from "./agentRowTokens.ts";
+import { setShepherdrTasks } from "./shepherdrTasks.ts";
 import { stateWatch } from "./agentStateWatch.ts";
 import { SnapshotRequests } from "./snapshotRequests.ts";
 import { ReorderCoordinator } from "./workspaceOrder.ts";
@@ -316,6 +317,7 @@ export function useRosterEvents({ onPaneMoved, machineSessions, locked, onRoster
       if (payload.type === "preferences") { receivePreferencesRef.current(payload.preferences); return; }
       if (payload.type === "herdr-sidebar") { setAgentRowTokens(payload.agents); return; }
       if (payload.type === "seen") { receiveSeen(payload.finishes); return; }
+      if (payload.type === "shepherdr-tasks") { setShepherdrTasks(payload.tasks ?? null); return; }
       if (payload.type === "device-paired") { setPairedNotices((list) => withPairedNotice(list, payload)); return; }
       if (payload.type === "relay-pairings") { setRelayPairings(payload.pairings); return; }
       if (payload.type === "remote-pairings") { setRemotePairings(payload.pairings); return; }

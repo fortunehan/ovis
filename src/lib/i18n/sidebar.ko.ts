@@ -84,4 +84,12 @@ export const SIDEBAR_KO: Record<string, string> = {
   "Remove from {group}": "{group}에서 빼기",
   "{count} working": "작업 중 {count}개",
   "On this device, an agent's helpers fold into one line under it in the Agents list, with their count. A helper that needs you and the one you selected stay in sight.": "이 기기의 에이전트 목록에서 에이전트의 도우미들을 그 아래 한 줄로 접고 개수를 보여 줍니다. 내 응답이 필요한 도우미와 선택한 도우미는 계속 보입니다.",
+  "Tasks": "작업",
+  "Tasks: {count} need you": "작업: 응답 필요 {count}개",
+  "Reconnecting to Shepherdr…": "Shepherdr에 다시 연결하는 중…",
+  "+{count} more": "+{count}개 더",
+  "{left} left": "{left} 남음",
+  "No terminal running": "실행 중인 터미널 없음",
+  "On {machine}, can't be opened from this PC": "{machine}에서 실행 중이라 이 PC에서 열 수 없음",
+  "On another machine, can't be opened from this PC": "다른 기기에서 실행 중이라 이 PC에서 열 수 없음",
 };

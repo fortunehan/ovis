@@ -1,0 +1,156 @@
+.sidebar-shell > .tasks-sidebar {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 45%;
+}
+
+.tasks-sidebar {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-2) var(--side-gutter) 0;
+}
+
+.tasks-heading {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-height: var(--side-row);
+  padding-inline-start: var(--space-1);
+}
+
+.tasks-title {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  line-height: var(--side-row);
+}
+
+.tasks-stale {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--status-reconnecting);
+  font-size: var(--fs-meta);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tasks-sidebar.is-stale .tasks-groups { opacity: 0.7; }
+
+.tasks-groups {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.tasks-group-toggle {
+  width: 100%;
+  cursor: pointer;
+}
+
+.tasks-group-caret {
+  flex: none;
+  width: var(--space-4);
+  height: var(--space-4);
+  margin-inline: calc((var(--side-box) - var(--space-4)) / 2);
+}
+
+.tasks-group-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tasks-group-count {
+  width: var(--side-box);
+  margin-left: auto;
+  font-size: var(--fs-meta);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.tasks-group.is-needs .tasks-group-count { color: var(--status-blocked); }
+
+.tasks-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.task-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-half);
+  width: 100%;
+  min-height: var(--side-row);
+  margin: 0;
+  padding: var(--space-1-5) var(--space-2) var(--space-1-5) var(--side-box);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-tight);
+  text-align: left;
+}
+
+button.task-row { cursor: pointer; }
+button.task-row:focus-visible { outline-offset: calc(var(--ring-offset) * -1); }
+
+@media (hover: hover) {
+  button.task-row:hover { background: var(--side-hover); }
+}
+
+.task-row-top {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1-5);
+  min-width: 0;
+}
+
+.task-row-ref {
+  flex: none;
+  color: var(--text-dim);
+  font-size: var(--fs-meta);
+  font-variant-numeric: var(--font-numeric);
+}
+
+.task-row-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-row-facts {
+  flex: none;
+  color: var(--text-dim);
+  font-size: var(--fs-meta);
+  font-variant-numeric: tabular-nums;
+}
+
+.task-row-line,
+.task-row-note {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-dim);
+  font-size: var(--fs-meta);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-row.is-needs .task-row-line { color: var(--status-blocked); }
+
+.task-row-note { font-style: italic; }
+
+.tasks-more {
+  margin: 0;
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--side-box);
+  color: var(--text-dim);
+  font-size: var(--fs-meta);
+}
