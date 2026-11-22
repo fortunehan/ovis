@@ -442,6 +442,92 @@ describe("buildSnapshot, what herdr-core reports beyond placement", () => {
   });
 });
 
+// shapes read off a Herdr app document and hc labels on 2026-11-21 (herdr-app chat mod, Shepherdr)
+describe("buildSnapshot, Shepherdr's spaces", () => {
+  const chat = (props: Record<string, unknown>) => ({ type: "block", id: `p-${String(props["terminal"] ?? "chat")}`, content: { mod: "chat", props } });
+  const assistantTab = (id: string, props: Record<string, unknown>) => ({ id, name: "Assistant", root: { type: "row", id: `r-${id}`, children: [{ ...chat(props), size: { weight: 1 } }] } });
+  const assistantLabels = (space: string, tab: string, where: string) => ({ "herdr.role": "coordinator", "herdr.coordinator.space": space, "herdr.coordinator.tab": tab, where });
+  const pending = (space: string) => ({ folder: `/work/${space}`, role: "coordinator", settings: {}, slot: `coord-${space}-x`, space, template: "assistant" });
+  const shown = (snapshot: ReturnType<typeof buildSnapshot>) => snapshot.workspaces.map((w) => [w.label, snapshot.tabs.filter((t) => t.workspace_id === w.workspace_id).map((t) => {
+    const panes = snapshot.panes.filter((p) => p.tab_id === t.tab_id).map((p) => p.pane_id);
+    return `${t.label}: ${panes.join(" ")}`;
+  })]);
+
+  it("lists a space whose only tab is its Assistant's chat block, with Assistant as its first entry", () => {
+    const layout = { spaces: [
+      { id: "spA", name: "shepherdr", folder: "/work/shepherdr", tabs: [assistantTab("tbA", { terminal: "t14j" })] },
+      { id: "spB", name: "mobile", folder: "/work/mobile", tabs: [assistantTab("tbB", { terminal: "t10p" }), { id: "tbB2", name: "", root: { type: "row", id: "r", children: [block("t13g")] } }] },
+    ] };
+    const snapshot = buildSnapshot([
+      terminal("t14j", { status: { app: "claude-code", state: "idle" }, labels: assistantLabels("spA", "tbA", "shepherdr / Assistant") }),
+      terminal("t10p", { status: { app: "claude-code", state: "working" }, labels: assistantLabels("spB", "tbB", "mobile / Assistant") }),
+      terminal("t13g", { labels: { "herdr.space": "spB", "herdr.tab": "tbB2", where: "mobile / 2" } }),
+    ], layout, "0.1.17");
+    expect(shown(snapshot)).toEqual([
+      ["shepherdr", ["Assistant: t14j"]],
+      ["mobile", ["Assistant: t10p", "2: t13g"]],
+    ]);
+    expect(snapshot.agents.map((a) => [a.pane_id, a.agent, a.workspace_id])).toEqual([["t14j", "claude", "spA"], ["t10p", "claude", "spB"]]);
+  });
+
+  it("puts an Assistant no chat block names yet in its space by its labels, first and alone", () => {
+    const layout = { spaces: [
+      { id: "spH", name: "ios-hk", tabs: [assistantTab("tbH", pending("spH"))] },
+      { id: "spC", name: "Codes", tabs: [{ id: "tbC2", name: "", root: block("t16g") }] },
+      { id: "spN", name: "web", tabs: [assistantTab("tbN", { terminal: "t9t" })] },
+    ] };
+    const snapshot = buildSnapshot([
+      terminal("t16g", { labels: { where: "Codes / 2" } }),
+      terminal("t157", { labels: assistantLabels("spH", "tbH", "ios-hk / Assistant") }),
+      terminal("t159", { labels: { "herdr.role": "coordinator", "herdr.coordinator.space": "spC", "herdr.coordinator.tab": "tbGone" } }),
+      terminal("t9t", { labels: assistantLabels("spN", "tbN", "web / Assistant") }),
+      terminal("t15x", { labels: assistantLabels("spN", "tbN", "web / Assistant") }),
+    ], layout, "0.1.17");
+    expect(shown(snapshot)).toEqual([
+      ["ios-hk", ["Assistant: t157"]],
+      ["Codes", ["Assistant: t159", "2: t16g"]],
+      ["web", ["Assistant: t9t", "Assistant: t15x"]],
+    ]);
+    expect(snapshot.panes.find((p) => p.pane_id === "t157")).toMatchObject({ workspace_id: "spH", tab_id: "tbH" });
+  });
+
+  it("nests a task's terminal under its Assistant and its helpers under it, by their own names, and leaves Other terminals only what belongs nowhere", () => {
+    const layout = { spaces: [
+      { id: "spO", name: "ovis", tabs: [assistantTab("tbO", { terminal: "t17v" }), { id: "tbO2", name: "dev", root: block("t20") }] },
+      { id: "spH", name: "ios-hk", tabs: [assistantTab("tbH", pending("spH"))] },
+    ] };
+    const task = (address: string, parent: string, name: string) => terminal(address, { parent, name, status: { app: "claude-code", state: "working" }, labels: { "herdr.task": "Codes-Lab-ovis#4", where: "ovis / Assistant" } });
+    const snapshot = buildSnapshot([
+      terminal("t17v", { labels: assistantLabels("spO", "tbO", "ovis / Assistant") }),
+      terminal("t20"),
+      task("t18f", "t17v", "ovis-4-spaces-show-their"),
+      task("t19a", "t18f", "ovis-4-review"),
+      terminal("t30", { labels: assistantLabels("spH", "tbH", "ios-hk / Assistant") }),
+      task("t31", "t30", "sih-2-release"),
+      task("t157", "t156", "sih-1-impact-analysis"),
+      terminal("t40"),
+    ], layout, "0.1.17");
+    expect(shown(snapshot)).toEqual([
+      ["ovis", ["Assistant: t17v", "ovis-4-spaces-show-their: t18f", "ovis-4-review: t19a", "dev: t20"]],
+      ["ios-hk", ["Assistant: t30", "sih-2-release: t31"]],
+      ["Other terminals", ["sih-1-impact-analysis: t157", "t40: t40"]],
+    ]);
+    expect(snapshot.panes.map((p) => [p.pane_id, (p as HerdrPane).parent_pane_id])).toEqual([
+      ["t17v", undefined], ["t18f", "t17v"], ["t19a", "t18f"], ["t20", undefined], ["t30", undefined], ["t31", "t30"], ["t157", undefined], ["t40", undefined],
+    ]);
+  });
+
+  it("adds nothing for a chat block that names no terminal, and hides a space with no live terminal", () => {
+    const layout = { spaces: [
+      { id: "spE", name: "empty", tabs: [assistantTab("tbE", pending("spE"))] },
+      { id: "spF", name: "finished", tabs: [assistantTab("tbF", { terminal: "t50" })] },
+      { id: "spW", name: "web", tabs: [assistantTab("tbW", { terminal: "" }), { id: "tbW2", name: "", root: block("t70") }] },
+    ] };
+    const snapshot = buildSnapshot([terminal("t50", { state: "finished" }), terminal("t70")], layout, "0.1.17");
+    expect(shown(snapshot)).toEqual([["web", ["2: t70"]]]);
+  });
+});
+
 describe("OpenCode sessions", () => {
   it("reads OpenCode's own pending records only, by their ids", () => {
     expect(opencodeRecords({ ses_a: { app: "opencode", state: "working" }, deploy: { app: "make", state: "working" }, ses_b: "working" })).toEqual(["ses_a"]);

@@ -28,6 +28,14 @@ export const TAB_LABEL = "herdr.tab";
 export const WORKSPACE_NAME_LABEL = "ovis.workspace";
 export const TAB_NAME_LABEL = "ovis.tab";
 export const PANE_NAME_LABEL = "ovis.pane";
+/**
+ * Shepherdr's labels on a space's Assistant (its `herdr.role` is `coordinator`): the space and tab
+ * it coordinates, where the app's chat block will hold it once it names the terminal.
+ */
+export const ROLE_LABEL = "herdr.role";
+export const COORDINATOR_SPACE_LABEL = "herdr.coordinator.space";
+export const COORDINATOR_TAB_LABEL = "herdr.coordinator.tab";
+const ASSISTANT_TAB_NAME = "Assistant";
 export { SEEN_LABEL, seenTurnOf } from "../../shared/attention.ts";
 
 /**
@@ -170,9 +178,9 @@ function chain(parts: readonly { node: AppNode; size: Size }[], direction: "righ
  */
 function appTree(node: unknown, take: (address: string) => HcTerminal | null, held: HcTerminal[]): AppNode | null {
   if (!isRecord(node)) return null;
-  const content = node["content"];
-  if (isRecord(content) && typeof content["terminal"] === "string") {
-    const terminal = take(content["terminal"]);
+  const address = blockTerminal(node["content"]);
+  if (address !== null) {
+    const terminal = take(address);
     if (!terminal) return null;
     held.push(terminal);
     return { leaf: terminal.address };
@@ -184,6 +192,22 @@ function appTree(node: unknown, take: (address: string) => HcTerminal | null, he
     return tree && isRecord(child) ? [{ node: tree, size: sizeOf(child) }] : [];
   });
   return parts.length === 0 ? null : { direction: node["type"] === "column" ? "down" : "right", parts };
+}
+
+/**
+ * The terminal a block shows: a terminal block's own, or the one a Herdr app chat block draws
+ * (`{ mod: "chat", props: { terminal } }`, Shepherdr's Assistant and task chats). A chat block that
+ * names none yet (an Assistant not started) shows nothing.
+ */
+function blockTerminal(content: unknown): string | null {
+  if (!isRecord(content)) return null;
+  if (typeof content["terminal"] === "string") return content["terminal"];
+  const props = content["props"];
+  return content["mod"] === "chat" && isRecord(props) && typeof props["terminal"] === "string" && props["terminal"] !== "" ? props["terminal"] : null;
+}
+
+function coordinator(terminal: HcTerminal): boolean {
+  return terminal.labels?.[ROLE_LABEL] === "coordinator" && Boolean(terminal.labels[COORDINATOR_SPACE_LABEL]);
 }
 
 function windowsPath(path: string): boolean {
@@ -250,11 +274,14 @@ function groups(terminals: readonly HcTerminal[], layout: unknown): Group[] {
     result.push(group);
   }
   // a terminal the app has not placed yet, labeled with its space (and tab) the way the app labels
-  // its own (an agent's worker, a terminal Ovis started): in that space, as the app will adopt it
+  // its own (an agent's worker, a terminal Ovis started): in that space, as the app will adopt it.
+  // A Shepherdr Assistant no chat block names yet goes by the space and tab it coordinates, first
+  // in its space as the app's Assistant tab is, and alone: a chat block draws one terminal.
   const rest: HcTerminal[] = [];
   for (const terminal of [...live.values()].filter((candidate) => !placed.has(candidate.address))) {
     const where = terminal.labels?.["where"]?.split(" / ").map((part) => part.trim());
-    const spaceId = terminal.labels?.[SPACE_LABEL];
+    const assistant = !terminal.labels?.[SPACE_LABEL] && coordinator(terminal);
+    const spaceId = assistant ? terminal.labels?.[COORDINATOR_SPACE_LABEL] : terminal.labels?.[SPACE_LABEL];
     let group = spaceId ? result.find((candidate) => candidate.id === spaceId) : undefined;
     if (!spaceId || (!group && ids.has(spaceId))) { rest.push(terminal); continue; }
     if (!group) {
@@ -263,19 +290,24 @@ function groups(terminals: readonly HcTerminal[], layout: unknown): Group[] {
       result.push(group);
     }
     if (!group.label) group.label = where?.[0] || terminal.labels?.[WORKSPACE_NAME_LABEL] || basename(group.folder ?? terminal.foreground?.cwd ?? terminal.cwd);
-    const labeled = terminal.labels?.[TAB_LABEL];
+    const coordinated = assistant ? terminal.labels?.[COORDINATOR_TAB_LABEL] : undefined;
+    const labeled = assistant ? (coordinated && !group.tabs.some((candidate) => candidate.id === coordinated && candidate.terminals.length > 0) ? coordinated : undefined) : terminal.labels?.[TAB_LABEL];
     // a tab id the app uses in another space would make one tab of two: this terminal gets its own
     // (an id of its own taken by a space or tab of the app's gets a number after it)
     let tabId = labeled && !(ids.has(labeled) && !group.tabs.some((candidate) => candidate.id === labeled)) ? labeled : `${spaceId}:${terminal.address}`;
     for (let n = 2; tabId !== labeled && ids.has(tabId) && !group.tabs.some((candidate) => candidate.id === tabId); n++) tabId = `${spaceId}:${terminal.address}:${n}`;
     const tab = group.tabs.find((candidate) => candidate.id === tabId);
-    if (tab && !tab.label) tab.label = where?.[1] || terminal.labels?.[TAB_NAME_LABEL] || String(group.tabs.indexOf(tab) + 1);
+    const named = (fallback: string): string => where?.[1] || terminal.labels?.[TAB_NAME_LABEL] || (assistant ? ASSISTANT_TAB_NAME : fallback);
+    if (tab && !tab.label) tab.label = named(String(group.tabs.indexOf(tab) + 1));
     if (tab) {
       tab.root = besides(tab.root, tab.terminals.length, terminal.address);
       tab.terminals.push(terminal);
     } else {
       ids.add(tabId);
-      group.tabs.push({ id: tabId, label: where?.[1] || terminal.labels?.[TAB_NAME_LABEL] || String(group.tabs.length + 1), terminals: [terminal], root: null, kept: own && tabId === labeled });
+      const made: ShownTab = { id: tabId, label: named(String(group.tabs.length + 1)), terminals: [terminal], root: null, kept: own && !assistant && tabId === labeled };
+      const after = assistant ? group.tabs.findIndex((candidate) => !candidate.terminals.some(coordinator)) : -1;
+      if (after >= 0) group.tabs.splice(after, 0, made);
+      else group.tabs.push(made);
     }
   }
   const tabOf = new Map<string, { group: Group; tab: Group["tabs"][number] }>();
