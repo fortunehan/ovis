@@ -80,7 +80,7 @@ import { machinePairingEvents } from "./machine-pairing-events.ts";
 import { handleSessionHistoryRequest, handleSessionResumeRequest, SESSION_HISTORY_PATH, SESSION_RESUME_PATH } from "./session-history-routes.ts";
 import type { PiSessionReader } from "./pi-session-metadata.ts";
 import { withoutHiddenTokens, type HerdrSidebarConfig } from "./herdr-sidebar.ts";
-import { NO_SHEPHERDR, type ShepherdrTasksService } from "./shepherdr-tasks.ts";
+import { handleShepherdrActionRequest, NO_SHEPHERDR, SHEPHERDR_ACTION_PATH, type ShepherdrTasksService } from "./shepherdr-tasks.ts";
 import { readHerdrUi } from "./herdr-ui.ts";
 import { MachineRelay, type RelayReceiptIds } from "./machine-relay.ts";
 import { sameOrigin } from "./machine-security.ts";
@@ -634,6 +634,8 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
   if (pathname === "/api/preferences") { setRequestRoute(pathname); return handlePreferencesRequest(request, preferences); }
   // the finishes read in some browser of this server; a watching device reads them and cannot add to them (above)
   if (pathname === "/api/seen") { setRequestRoute(pathname); return handleSeenRequest(request, seen); }
+  // the Tasks section's Accept and answers, passed on to Shepherdr on this PC; a watching device cannot send them (above)
+  if (pathname === SHEPHERDR_ACTION_PATH) return handleShepherdrActionRequest(request, shepherdrTasks);
 
   if (pathname === "/api/system") { setRequestRoute(pathname); return handleSystemRequest(request, ctx.services.systemSampler); }
   if (pathname === USER_FONTS_PATH || pathname.startsWith(`${USER_FONTS_PATH}/`)) return handleUserFontsRequest(request, pathname, ctx.services.fontsDir, url.search);

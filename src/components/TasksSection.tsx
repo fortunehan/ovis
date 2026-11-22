@@ -1,10 +1,14 @@
-import { useId, useState, type ReactNode } from "react";
+import { useId, useState, type FormEvent, type ReactNode } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import type { ShepherdrTaskRow, ShepherdrTasks } from "../../shared/shepherdr-tasks.ts";
+import { SHEPHERDR_OTHER_MAX, type ShepherdrActionRequest, type ShepherdrTaskRow, type ShepherdrTasks } from "../../shared/shepherdr-tasks.ts";
 import { LOCAL_MACHINE } from "../../shared/machines.ts";
 import { useShepherdrTasks } from "../lib/shepherdrTasks.ts";
+import { ApiError, sendShepherdrAction } from "../lib/api.ts";
 import { useT } from "../lib/i18n.ts";
+import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import "./TasksSection.css";
+
+type Act = (request: ShepherdrActionRequest) => Promise<void>;
 
 const FOLD_KEY = "ovis.tasks.folded";
 
@@ -25,13 +29,14 @@ export function tasksBadgeLabel(t: ReturnType<typeof useT>, count: number): stri
  * with its counts, and nothing at all where this PC reads no Shepherdr. The grouped list with counts follows the Codex
  * app's task list; the groups, words and order are Shepherdr's own.
  */
-export function TasksSection({ onOpen }: { onOpen(machineId: string, paneId: string): void }): ReactNode {
+export function TasksSection({ onOpen, watching = false }: { onOpen(machineId: string, paneId: string): void; watching?: boolean }): ReactNode {
   const tasks = useShepherdrTasks();
   if (!tasks) return null;
-  return <TasksList tasks={tasks} onOpen={onOpen} />;
+  return <TasksList tasks={tasks} onOpen={onOpen} {...(watching ? {} : { act: sendShepherdrAction })} />;
 }
 
-export function TasksList({ tasks, onOpen }: { tasks: ShepherdrTasks; onOpen(machineId: string, paneId: string): void }): ReactNode {
+/** `act`: Accept and the answers, through this server (a watching device has none, so no buttons). */
+export function TasksList({ tasks, onOpen, act }: { tasks: ShepherdrTasks; onOpen(machineId: string, paneId: string): void; act?: Act }): ReactNode {
   const t = useT();
   const baseId = useId();
   const [folded, setFolded] = useState(readFolded);
@@ -59,7 +64,7 @@ export function TasksList({ tasks, onOpen }: { tasks: ShepherdrTasks; onOpen(mac
           </button>
           <div id={listId} hidden={isFolded}>
             {rows.length > 0 && <ul className="tasks-list">
-              {rows.map((row) => <li key={row.key}><TaskRow row={row} onOpen={onOpen} /></li>)}
+              {rows.map((row) => <li key={row.key}><TaskRow row={row} onOpen={onOpen} {...(act ? { act } : {})} /></li>)}
             </ul>}
             {more > 0 && <p className="tasks-more">{t("+{count} more", { count: more })}</p>}
           </div>
@@ -69,7 +74,7 @@ export function TasksList({ tasks, onOpen }: { tasks: ShepherdrTasks; onOpen(mac
   </section>;
 }
 
-function TaskRow({ row, onOpen }: { row: ShepherdrTaskRow; onOpen(machineId: string, paneId: string): void }): ReactNode {
+function TaskRow({ row, onOpen, act }: { row: ShepherdrTaskRow; onOpen(machineId: string, paneId: string): void; act?: Act }): ReactNode {
   const t = useT();
   const title = row.ref !== null ? row.name ?? row.body : row.title;
   const line = row.ref !== null ? row.line ?? row.body : row.body;
@@ -86,9 +91,60 @@ function TaskRow({ row, onOpen }: { row: ShepherdrTaskRow; onOpen(machineId: str
     {where !== "" && <span className="task-row-line">{where}</span>}
     {note !== null && <span className="task-row-note">{note}</span>}
   </>;
-  if (row.open.kind === "terminal") {
-    const paneId = row.open.pane_id;
-    return <button type="button" className={`task-row is-${row.group}`} onClick={() => onOpen(LOCAL_MACHINE, paneId)}>{body}</button>;
-  }
-  return <div className={`task-row is-${row.group} is-inert`}>{body}</div>;
+  const paneId = row.open.kind === "terminal" ? row.open.pane_id : null;
+  const main = paneId !== null
+    ? <button type="button" className={`task-row is-${row.group}`} onClick={() => onOpen(LOCAL_MACHINE, paneId)}>{body}</button>
+    : <div className={`task-row is-${row.group} is-inert`}>{body}</div>;
+  if (!act || (!row.accept && !row.answer)) return main;
+  return <div className="task-item">
+    {main}
+    <TaskActions row={row} title={title} summary={line} act={act} />
+  </div>;
+}
+
+/**
+ * A row's Accept (after a confirm sheet with its title and summary) and a question's choices and Other words, only as
+ * the feed offers them. A refusal shows Shepherdr's own words on the row, with no retry: the live feed then updates the
+ * row. Shepherdr Wake's notification buttons are the model: the same buttons, sent once.
+ */
+function TaskActions({ row, title, summary, act }: { row: ShepherdrTaskRow; title: string; summary: string; act: Act }): ReactNode {
+  const t = useT();
+  const [confirming, setConfirming] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [other, setOther] = useState("");
+  const send = async (request: ShepherdrActionRequest): Promise<void> => {
+    setPending(true);
+    setError(null);
+    try {
+      await act(request);
+      setSent(true);
+      setOther("");
+    } catch (reason: unknown) {
+      setError(reason instanceof ApiError ? reason.detail : reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setPending(false);
+    }
+  };
+  const busy = pending || sent;
+  const submitOther = (event: FormEvent): void => {
+    event.preventDefault();
+    if (other.trim() === "" || busy) return;
+    void send({ key: row.key, other });
+  };
+  const answer = row.answer;
+  return <div className="task-row-actions">
+    {(row.accept || (answer && answer.choices.length > 0)) && <div className="task-row-buttons">
+      {row.accept && <button type="button" className="btn btn-primary task-row-button" disabled={busy} onClick={() => setConfirming(true)}>{t("Accept")}</button>}
+      {answer?.choices.map((choice) => <button key={choice.i} type="button" className="btn task-row-button" disabled={busy} onClick={() => void send({ key: row.key, choice: choice.i })}>{choice.label}</button>)}
+    </div>}
+    {answer?.other && <form className="task-row-other" onSubmit={submitOther}>
+      <input className="task-row-other-input" type="text" value={other} maxLength={SHEPHERDR_OTHER_MAX} disabled={busy} placeholder={t("Other answer")} aria-label={t("Other answer")} enterKeyHint="send" onChange={(event) => setOther(event.target.value)} />
+      <button type="submit" className="btn task-row-button" disabled={busy || other.trim() === ""}>{t("Send answer")}</button>
+    </form>}
+    {error !== null && <p className="task-row-error" role="alert">{error}</p>}
+    {confirming && row.accept && <ConfirmDialog title={t("Accept {title}?", { title: row.ref !== null ? `${row.ref} · ${title}` : title })} body={summary || t("Accepting finishes this task and merges its work.")} confirmLabel={t("Accept")}
+      onConfirm={async () => { setConfirming(false); await send({ key: row.key, accept: true }); }} onClose={() => setConfirming(false)} />}
+  </div>;
 }

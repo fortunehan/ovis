@@ -338,6 +338,7 @@ describe("demo transport", () => {
     "/api/runtime/move/stop": "the demo reports runtime move unavailable (not_herdr), so the app never offers a stop",
     "/api/runtime/move/stop-all": "the demo reports runtime move unavailable (not_herdr), so the app never offers a stop",
     "/api/account/enroll": "account linking: no screen of the app asks for it yet (the account screens come with their own demo answers)",
+    "/api/shepherdr/action": "the demo tells no Shepherdr tasks, so the app shows no Tasks row to accept or answer",
     "/api/updates/cancel": "a connection server asks a PC's own Ovis to stop its update; the demo's browser never does",
     "/api/account/introduce": "account linking: no screen of the app asks for it yet (the account screens come with their own demo answers)",
     "/api/account/introduction": "account linking: no screen of the app asks for it yet (the account screens come with their own demo answers)",
