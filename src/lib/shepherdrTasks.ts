@@ -1,6 +1,6 @@
 import { useMemo, useSyncExternalStore } from "react";
-import type { ShepherdrTasks } from "../../shared/shepherdr-tasks.ts";
-import { LOCAL_MACHINE, type Machine } from "../../shared/machines.ts";
+import type { ShepherdrTaskGroup, ShepherdrTaskRow, ShepherdrTasks } from "../../shared/shepherdr-tasks.ts";
+import { HC_OTHER_WORKSPACE_ID, LOCAL_MACHINE, type Machine } from "../../shared/machines.ts";
 
 /**
  * The Tasks section's list, as this server reads Shepherdr's glance feed on its PC (server/shepherdr-tasks.ts) and
@@ -76,5 +76,53 @@ export function withoutTaskTerminals<T extends Pick<Machine, "id" | "snapshot">>
         layouts: snapshot.layouts.filter((layout) => !emptied.has(layout.tab_id)),
       },
     };
+  });
+}
+
+/** The Tasks section's filter, remembered on this device: the open space's rows (the default) or every row. */
+export type TasksScope = "space" | "all";
+
+const SCOPE_KEY = "ovis.tasks.scope";
+
+export function readTasksScope(): TasksScope {
+  try { return window.localStorage.getItem(SCOPE_KEY) === "all" ? "all" : "space"; } catch { return "space"; }
+}
+
+export function saveTasksScope(scope: TasksScope): void {
+  try { window.localStorage.setItem(SCOPE_KEY, scope); } catch {}
+}
+
+/**
+ * What This space narrows to: the open workspace when it is a Shepherdr space, else why every row shows. The section
+ * exists only on a herdr-core server (server/index.ts), where each of this PC's workspaces is a Herdr app space under
+ * the id Shepherdr names it by (a row's `place`), except Other terminals; another PC's workspace is none of them.
+ */
+export type TasksSpace = { kind: "space"; id: string; label: string } | { kind: "none" } | { kind: "not-shepherdr" };
+
+export function tasksSpaceOf(machineId: string, workspace: { workspace_id: string; label: string } | null): TasksSpace {
+  if (!workspace) return { kind: "none" };
+  if (machineId !== LOCAL_MACHINE || workspace.workspace_id === HC_OTHER_WORKSPACE_ID) return { kind: "not-shepherdr" };
+  return { kind: "space", id: workspace.workspace_id, label: workspace.label };
+}
+
+/**
+ * A group as the section shows it. `count` is Shepherdr's own under All. Under This space it counts the listed rows of
+ * that space, which is the whole count only while the feed lists every row of the group (`complete`); `unlisted` is
+ * how many of the group's rows the feed leaves out, of any space.
+ */
+export interface ShownTaskGroup extends ShepherdrTaskGroup {
+  rows: ShepherdrTaskRow[];
+  complete: boolean;
+  unlisted: number;
+}
+
+/** The groups under the filter: `place` null shows every row. Only what the section draws: nothing else follows it. */
+export function shownTaskGroups(tasks: ShepherdrTasks, place: string | null): ShownTaskGroup[] {
+  return tasks.groups.map((group) => {
+    const listed = tasks.rows.filter((row) => row.group === group.kind);
+    const unlisted = Math.max(0, group.count - listed.length);
+    if (place === null) return { ...group, rows: listed, complete: true, unlisted };
+    const rows = listed.filter((row) => row.place === place);
+    return { ...group, count: rows.length, rows, complete: unlisted === 0, unlisted };
   });
 }

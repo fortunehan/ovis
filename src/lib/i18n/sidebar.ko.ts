@@ -97,4 +97,11 @@ export const SIDEBAR_KO: Record<string, string> = {
   "Accepting finishes this task and merges its work.": "수락하면 이 작업이 끝나고 변경 사항이 병합됩니다.",
   "Other answer": "기타 답변",
   "Send answer": "답변 보내기",
+  "Show tasks of": "표시할 작업",
+  "This space": "이 워크스페이스",
+  "No space open, showing all": "열린 워크스페이스가 없어 전체 표시",
+  "Not a Shepherdr space, showing all": "Shepherdr 워크스페이스가 아니어서 전체 표시",
+  "At least {count}: Shepherdr lists only part of this group": "최소 {count}개: Shepherdr가 이 그룹의 일부만 보여 줍니다",
+  "{count}+|at least": "{count}+",
+  "+{count} more not listed, from any space": "목록에 없는 {count}개 더 (어느 워크스페이스인지 알 수 없음)",
 };

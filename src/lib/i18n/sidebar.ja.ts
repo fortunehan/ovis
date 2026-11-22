@@ -97,4 +97,11 @@ export const SIDEBAR_JA: Record<string, string> = {
   "Accepting finishes this task and merges its work.": "承認するとこのタスクが完了し、その変更がマージされます。",
   "Other answer": "その他の回答",
   "Send answer": "回答を送信",
+  "Show tasks of": "表示するタスク",
+  "This space": "このワークスペース",
+  "No space open, showing all": "ワークスペースが開かれていないため、すべて表示",
+  "Not a Shepherdr space, showing all": "Shepherdr のワークスペースではないため、すべて表示",
+  "At least {count}: Shepherdr lists only part of this group": "少なくとも {count} 件：Shepherdr はこのグループの一部だけを一覧にしています",
+  "{count}+|at least": "{count}+",
+  "+{count} more not listed, from any space": "ほかに一覧にない {count} 件（どのワークスペースのものかは不明）",
 };

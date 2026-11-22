@@ -2,7 +2,7 @@ import { useId, useState, type FormEvent, type ReactNode } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { SHEPHERDR_OTHER_MAX, type ShepherdrActionRequest, type ShepherdrTaskRow, type ShepherdrTasks } from "../../shared/shepherdr-tasks.ts";
 import { LOCAL_MACHINE } from "../../shared/machines.ts";
-import { useShepherdrTasks } from "../lib/shepherdrTasks.ts";
+import { readTasksScope, saveTasksScope, shownTaskGroups, useShepherdrTasks, type TasksScope, type TasksSpace } from "../lib/shepherdrTasks.ts";
 import { ApiError, sendShepherdrAction } from "../lib/api.ts";
 import { useT } from "../lib/i18n.ts";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
@@ -29,17 +29,26 @@ export function tasksBadgeLabel(t: ReturnType<typeof useT>, count: number): stri
  * with its counts, and nothing at all where this PC reads no Shepherdr. The grouped list with counts follows the Codex
  * app's task list; the groups, words and order are Shepherdr's own.
  */
-export function TasksSection({ onOpen, watching = false }: { onOpen(machineId: string, paneId: string): void; watching?: boolean }): ReactNode {
+export function TasksSection({ onOpen, space, watching = false }: { onOpen(machineId: string, paneId: string): void; space: TasksSpace; watching?: boolean }): ReactNode {
   const tasks = useShepherdrTasks();
   if (!tasks) return null;
-  return <TasksList tasks={tasks} onOpen={onOpen} {...(watching ? {} : { act: sendShepherdrAction })} />;
+  return <TasksList tasks={tasks} space={space} onOpen={onOpen} {...(watching ? {} : { act: sendShepherdrAction })} />;
 }
 
-/** `act`: Accept and the answers, through this server (a watching device has none, so no buttons). */
-export function TasksList({ tasks, onOpen, act }: { tasks: ShepherdrTasks; onOpen(machineId: string, paneId: string): void; act?: Act }): ReactNode {
+/**
+ * `act`: Accept and the answers, through this server (a watching device has none, so no buttons). `space`: what This
+ * space narrows to (Shepherdr's Tasks panel's Only this space, here on by default); with no Shepherdr space open it
+ * shows every row and says so. Only what this list draws follows it: the drawer button's count and the hidden task
+ * terminals go by every listed row.
+ */
+export function TasksList({ tasks, space, onOpen, act }: { tasks: ShepherdrTasks; space: TasksSpace; onOpen(machineId: string, paneId: string): void; act?: Act }): ReactNode {
   const t = useT();
   const baseId = useId();
   const [folded, setFolded] = useState(readFolded);
+  const [scope, setScope] = useState<TasksScope>(readTasksScope);
+  const pick = (next: TasksScope) => { setScope(next); saveTasksScope(next); };
+  const place = scope === "space" && space.kind === "space" ? space.id : null;
+  const fallback = scope !== "space" ? null : space.kind === "none" ? t("No space open, showing all") : space.kind === "not-shepherdr" ? t("Not a Shepherdr space, showing all") : null;
   const toggle = (kind: string) => {
     const next = folded.includes(kind) ? folded.filter((item) => item !== kind) : [...folded, kind];
     setFolded(next);
@@ -48,25 +57,32 @@ export function TasksList({ tasks, onOpen, act }: { tasks: ShepherdrTasks; onOpe
   return <section className={`tasks-sidebar${tasks.stale ? " is-stale" : ""}`} aria-label={t("Tasks")}>
     <div className="tasks-heading">
       <h2 className="tasks-title">{t("Tasks")}</h2>
-      {tasks.stale && <span className="tasks-stale" role="status">{t("Reconnecting to Shepherdr…")}</span>}
+      <div className="segmented tasks-scope" role="group" aria-label={t("Show tasks of")}>
+        <button type="button" aria-pressed={scope === "space"} onClick={() => pick("space")}>{t("This space")}</button>
+        <button type="button" aria-pressed={scope === "all"} onClick={() => pick("all")}>{t("All")}</button>
+      </div>
     </div>
+    {tasks.stale && <p className="tasks-stale" role="status">{t("Reconnecting to Shepherdr…")}</p>}
+    {place !== null && space.kind === "space" && <p className="tasks-scope-note">{space.label}</p>}
+    {fallback !== null && <p className="tasks-scope-note" role="status">{fallback}</p>}
     <div className="tasks-groups">
-      {tasks.groups.map((group) => {
-        const rows = tasks.rows.filter((row) => row.group === group.kind);
-        const more = group.count - rows.length;
+      {shownTaskGroups(tasks, place).map((group) => {
+        const { rows, unlisted: more } = group;
         const isFolded = folded.includes(group.kind);
         const listId = `${baseId}-${group.kind}`;
         return <div key={group.kind} className={`tasks-group is-${group.kind}`}>
           <button type="button" className="tasks-group-toggle sidebar-section-label" aria-expanded={!isFolded} aria-controls={listId} onClick={() => toggle(group.kind)}>
             {isFolded ? <ChevronRight className="tasks-group-caret" aria-hidden="true" /> : <ChevronDown className="tasks-group-caret" aria-hidden="true" />}
             <span className="tasks-group-label">{group.label}</span>
-            <span className="tasks-group-count">{group.count}</span>
+            {group.complete
+              ? <span className="tasks-group-count">{group.count}</span>
+              : <span className="tasks-group-count" title={t("At least {count}: Shepherdr lists only part of this group", { count: group.count })}>{t("{count}+|at least", { count: group.count })}</span>}
           </button>
           <div id={listId} hidden={isFolded}>
             {rows.length > 0 && <ul className="tasks-list">
               {rows.map((row) => <li key={row.key}><TaskRow row={row} onOpen={onOpen} {...(act ? { act } : {})} /></li>)}
             </ul>}
-            {more > 0 && <p className="tasks-more">{t("+{count} more", { count: more })}</p>}
+            {more > 0 && <p className="tasks-more">{place === null ? t("+{count} more", { count: more }) : t("+{count} more not listed, from any space", { count: more })}</p>}
           </div>
         </div>;
       })}

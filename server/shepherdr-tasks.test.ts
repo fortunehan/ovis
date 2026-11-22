@@ -24,7 +24,7 @@ const terminal = (address: string, labels: Record<string, string> = {}, parent: 
 describe("the Tasks section's rows", () => {
   const identities = new Map([
     ["OVIS-5", { label: "Codes-Lab-ovis#5", agents: [] }],
-    ["OVIS-6", { label: "Codes-Lab-ovis#6", agents: [] }],
+    ["OVIS-6", { label: "Codes-Lab-ovis#6", agents: [], space: "sp1" }],
     ["SHEP-9", { label: "Codes-Lab-shepherdr#9", agents: ["t30"] }],
   ]);
   const terminals = [
@@ -89,6 +89,19 @@ describe("the Tasks section's rows", () => {
   it("only shows an automation's words", () => {
     expect(byKey.get("auto:nightly")!.open).toEqual({ kind: "words" });
   });
+
+  it("names each row's space by its link, a Ready row's by its task's record, another machine's qualified", () => {
+    expect(tasks.rows.map((row) => [row.key, row.place])).toEqual([
+      ["need:SDS-1/worker:q1", "sp1"],
+      ["need:pchat1:q2", "sp1"],
+      ["auto:nightly", "sp1"],
+      ["ready:OVIS-6", "sp1"],
+      ["task:m3:VIBE-10", "m3/sp4"],
+      ["task:SHEP-9", "sp2"],
+    ]);
+    const alert = tasksOf(feedDoc([{ key: "alert:mem", kind: "needs", type: "alert", title: "Memory", body: "Over 75%", url: "./" }]), false, [], identities);
+    expect(alert.rows[0]!.place).toBeNull();
+  });
 });
 
 describe("the feed's doc", () => {
@@ -118,11 +131,11 @@ describe("Shepherdr's files on this PC", () => {
 
   it("name each task by its ref, with a list's own prefix or herdr-task's", () => {
     const dir = tempDir();
-    writeFileSync(join(dir, "Codes-Lab-ovis.json"), JSON.stringify({ folder: "/c/ovis", prefix: "OVIS", tasks: [{ id: 5, agents: [{ address: "t9", ended: 1 }, { address: "t11" }] }] }));
+    writeFileSync(join(dir, "Codes-Lab-ovis.json"), JSON.stringify({ folder: "/c/ovis", prefix: "OVIS", tasks: [{ id: 5, space: "sp1", agents: [{ address: "t9", ended: 1 }, { address: "t11" }] }] }));
     writeFileSync(join(dir, "Codes-herdr-app-ttt.json"), JSON.stringify({ folder: "/c/herdr-app-ttt", tasks: [{ id: 2 }] }));
     writeFileSync(join(dir, "broken.json"), "{");
     expect(Object.fromEntries(readTaskIdentities(dir))).toEqual({
-      "OVIS-5": { label: "Codes-Lab-ovis#5", agents: ["t11"] },
+      "OVIS-5": { label: "Codes-Lab-ovis#5", agents: ["t11"], space: "sp1" },
       "HAT-2": { label: "Codes-herdr-app-ttt#2", agents: [] },
     });
     expect(autoPrefix("/c/herdrWeb")).toBe("HW");
