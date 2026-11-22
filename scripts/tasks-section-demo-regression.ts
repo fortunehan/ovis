@@ -245,7 +245,10 @@ try {
           assert.deepEqual(await section(page).locator(".task-row-title").allTextContents(), ["nightly-tests · Didn't run", "Idempotent payments"]);
           const agents = await agentPanes(page);
           assert.ok(!agents.includes("w1H:p1") && !agents.includes("w1C:p1"), `a task listed in another space still hides its terminal (${agents.join(", ")})`);
-          if (evidence) await section(page).screenshot({ path: join(evidence, `tasks-this-space-${width}.png`) });
+          if (evidence) {
+            await page.evaluate(() => Promise.allSettled(document.getAnimations().filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity).map((animation) => animation.finished)));
+            await section(page).screenshot({ path: join(evidence, `tasks-this-space-${width}.png`) });
+          }
 
           await scope.getByRole("button", { name: "All" }).click();
           assert.deepEqual(await heads(), ["Needs you3", "Ready1", "Working1", "Done5"], "All shows Shepherdr's own counts");
