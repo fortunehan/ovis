@@ -5,7 +5,7 @@ import { sidebarAgents } from "../../shared/agent-roster.ts";
 import machinesFixture from "../../site/demo/fixtures/machines.json";
 import { inboxOrder } from "./agentInbox.ts";
 import type { SidebarActivity } from "./sidebarActivity.tsx";
-import { withoutTaskTerminals } from "./shepherdrTasks.ts";
+import { shownTaskGroups, tasksSpaceOf, withoutTaskTerminals } from "./shepherdrTasks.ts";
 
 const fixture: Machine[] = JSON.parse(JSON.stringify(machinesFixture.machines));
 const local = fixture[0]!;
@@ -14,7 +14,7 @@ const pcs = [local, lab];
 const idle: SidebarActivity = { seqs: () => new Map(), status: () => "idle" };
 
 const row = (key: string, terminals: string[]): ShepherdrTaskRow => ({
-  key, group: "working", type: "task", ref: key, title: key, body: key, name: key, space: "infra", machine: "this machine", line: null,
+  key, group: "working", type: "task", ref: key, title: key, body: key, name: key, space: "infra", place: "sp1", machine: "this machine", line: null,
   progress: null, left: null, at: null, open: terminals[0] ? { kind: "terminal", pane_id: terminals[0] } : { kind: "no-terminal" }, terminals,
 });
 const list = (rows: ShepherdrTaskRow[], stale = false): ShepherdrTasks => ({ groups: [{ kind: "working", label: "Working", count: rows.length }], rows, needs: 0, stale, at: 0 });
@@ -56,5 +56,32 @@ describe("task terminals the Tasks section lists", () => {
   it("hide nothing when no row has a terminal here", () => {
     const rows = [{ ...row("ELIA-53", []), open: { kind: "other-machine" as const, machine: "Mac mini" } }, { ...row("SDS-17", []), open: { kind: "no-terminal" as const } }];
     expect(shown(withoutTaskTerminals(pcs, list(rows)))).toEqual(shown(pcs));
+  });
+});
+
+describe("the Tasks section's space filter", () => {
+  const at = (key: string, group: string, place: string | null): ShepherdrTaskRow => ({ ...row(key, []), group, place });
+  const tasks: ShepherdrTasks = {
+    groups: [{ kind: "needs", label: "Needs you", count: 2 }, { kind: "working", label: "Working", count: 3 }, { kind: "done", label: "Done", count: 30 }],
+    rows: [at("A-1", "needs", "sp1"), at("mem", "needs", null), at("A-2", "working", "sp1"), at("B-1", "working", "sp2"), at("m3:C-1", "working", "m3/sp1"), at("A-3", "done", "sp1")],
+    needs: 2, stale: false, at: 0,
+  };
+  const view = (place: string | null) => shownTaskGroups(tasks, place).map((group) => [group.kind, group.count, group.complete, group.unlisted, group.rows.map((item) => item.key).join(",")]);
+
+  it("shows every row with Shepherdr's own counts under All", () => {
+    expect(view(null)).toEqual([["needs", 2, true, 0, "A-1,mem"], ["working", 3, true, 0, "A-2,B-1,m3:C-1"], ["done", 30, true, 29, "A-3"]]);
+  });
+
+  it("narrows to one space's rows, counting them only where the feed lists the whole group", () => {
+    expect(view("sp1")).toEqual([["needs", 1, true, 0, "A-1"], ["working", 1, true, 0, "A-2"], ["done", 1, false, 29, "A-3"]]);
+    expect(view("sp9")).toEqual([["needs", 0, true, 0, ""], ["working", 0, true, 0, ""], ["done", 0, false, 29, ""]]);
+  });
+
+  it("filters by the workspace open on this PC, and by none elsewhere", () => {
+    const workspace = { workspace_id: "sp1", label: "ovis" };
+    expect(tasksSpaceOf("local", workspace)).toEqual({ kind: "space", id: "sp1", label: "ovis" });
+    expect(tasksSpaceOf("local", null)).toEqual({ kind: "none" });
+    expect(tasksSpaceOf("lab", workspace)).toEqual({ kind: "not-shepherdr" });
+    expect(tasksSpaceOf("local", { workspace_id: "hc-other", label: "Other terminals" })).toEqual({ kind: "not-shepherdr" });
   });
 });

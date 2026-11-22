@@ -5,6 +5,8 @@
 // once the list is gone. The list is told as the server tells it (a `shepherdr-tasks` machine event). Then the row
 // buttons: a question's choice and Other words, and Accept after its confirm sheet on a row of another machine, each
 // sent to this server's POST /api/shepherdr/action as the row offers it, a refusal shown on the row in Shepherdr's words.
+// Last the space filter: This space by default on a device that never picked, the open workspace's rows with counts
+// that say when they may be short, the badge and the hidden terminals unchanged, and All remembered across a reload.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -19,7 +21,7 @@ const app = mkdtempSync(join(tmpdir(), "ovis-tasks-section-demo-"));
 const evidence = process.env.UI_EVIDENCE_DIR;
 
 const row = (fields: Partial<ShepherdrTasks["rows"][number]> & Pick<ShepherdrTasks["rows"][number], "key" | "group" | "open">): ShepherdrTasks["rows"][number] => ({
-  type: "task", ref: null, title: "", body: "", name: null, space: null, machine: "this machine", line: null, progress: null, left: null, at: null, terminals: [], ...fields,
+  type: "task", ref: null, title: "", body: "", name: null, space: null, place: null, machine: "this machine", line: null, progress: null, left: null, at: null, terminals: [], ...fields,
 });
 const TASKS: ShepherdrTasks = {
   groups: [
@@ -29,12 +31,12 @@ const TASKS: ShepherdrTasks = {
     { kind: "done", label: "Done", count: 5 },
   ],
   rows: [
-    row({ key: "need:INF-3/worker:q1", group: "needs", type: "need", ref: "INF-3", title: "INF-3 · Needs you", body: "Restore from last night?", name: "Why did the backup fail?", space: "infra", line: "Restore from last night?", progress: 60, left: "20m", open: { kind: "terminal", pane_id: "w1H:p1" }, terminals: ["w1H:p1"], answer: { chat: "INF-3/worker", question: "q1", choices: [{ i: 0, label: "Restore" }, { i: 1, label: "Skip" }], other: true } }),
-    row({ key: "need:pweb:q2", group: "needs", type: "need", assistant: true, title: "Assistant · Needs you", body: "Which branch should the export fix go on?", space: "web-dashboard", open: { kind: "terminal", pane_id: "w1D:p1" } }),
-    row({ key: "auto:nightly", group: "needs", title: "nightly-tests · Didn't run", body: "The folder is gone", space: "checkout-api", open: { kind: "words" } }),
-    row({ key: "ready:m3:VIBE-10", group: "ready", ref: "VIBE-10", title: "VIBE-10 · Finished", body: "Voice: fix lag", name: "Voice: fix lag", space: "Home", machine: "Mac mini", line: "Ready 2h ago", open: { kind: "other-machine", machine: "Mac mini" }, accept: { task: "m3:VIBE-10" } }),
-    row({ key: "task:PAY-7", group: "working", ref: "PAY-7", title: "PAY-7 · Working", body: "Idempotent payments", name: "Idempotent payments", space: "checkout-api", line: "Writing the retry tests", progress: 35, left: "1h", open: { kind: "terminal", pane_id: "w1C:p1" }, terminals: ["w1C:p1"] }),
-    row({ key: "task:DOC-2", group: "done", ref: "DOC-2", title: "DOC-2 · Done", body: "Proofread the guide", name: "Proofread the guide", space: "docs-site", line: "Merged", open: { kind: "no-terminal" } }),
+    row({ key: "need:INF-3/worker:q1", group: "needs", type: "need", ref: "INF-3", title: "INF-3 · Needs you", body: "Restore from last night?", name: "Why did the backup fail?", space: "infra", place: "w1H", line: "Restore from last night?", progress: 60, left: "20m", open: { kind: "terminal", pane_id: "w1H:p1" }, terminals: ["w1H:p1"], answer: { chat: "INF-3/worker", question: "q1", choices: [{ i: 0, label: "Restore" }, { i: 1, label: "Skip" }], other: true } }),
+    row({ key: "need:pweb:q2", group: "needs", type: "need", assistant: true, title: "Assistant · Needs you", body: "Which branch should the export fix go on?", space: "web-dashboard", place: "w1D", open: { kind: "terminal", pane_id: "w1D:p1" } }),
+    row({ key: "auto:nightly", group: "needs", title: "nightly-tests · Didn't run", body: "The folder is gone", space: "checkout-api", place: "w1C", open: { kind: "words" } }),
+    row({ key: "ready:m3:VIBE-10", group: "ready", ref: "VIBE-10", title: "VIBE-10 · Finished", body: "Voice: fix lag", name: "Voice: fix lag", space: "Home", place: "m3/sp4", machine: "Mac mini", line: "Ready 2h ago", open: { kind: "other-machine", machine: "Mac mini" }, accept: { task: "m3:VIBE-10" } }),
+    row({ key: "task:PAY-7", group: "working", ref: "PAY-7", title: "PAY-7 · Working", body: "Idempotent payments", name: "Idempotent payments", space: "checkout-api", place: "w1C", line: "Writing the retry tests", progress: 35, left: "1h", open: { kind: "terminal", pane_id: "w1C:p1" }, terminals: ["w1C:p1"] }),
+    row({ key: "task:DOC-2", group: "done", ref: "DOC-2", title: "DOC-2 · Done", body: "Proofread the guide", name: "Proofread the guide", space: "docs-site", place: "w1F", line: "Merged", open: { kind: "no-terminal" } }),
   ],
   needs: 3,
   stale: false,
@@ -86,16 +88,18 @@ declare global {
 let origin = "";
 type Theme = "light" | "dark";
 
-async function open(browser: Browser, width: number, theme: Theme): Promise<{ page: Page; errors: string[]; phone: boolean; close: () => Promise<void> }> {
+/** `scope`: the filter this device picked before (none: it never picked, so This space) */
+async function open(browser: Browser, width: number, theme: Theme, { pane = "w1G:p1", scope = "all" as string | null } = {}): Promise<{ page: Page; errors: string[]; phone: boolean; close: () => Promise<void> }> {
   const phone = width <= 480;
   const context = await browser.newContext({ viewport: { width, height: phone ? 844 : 900 }, locale: "en-US", hasTouch: phone, isMobile: phone, colorScheme: theme });
-  await context.addInitScript((chosen) => {
+  await context.addInitScript(([chosen, picked]) => {
     if (localStorage.getItem("ovis:settings") === null) localStorage.setItem("ovis:settings", JSON.stringify({ language: "en", theme: chosen }));
-  }, theme);
+    if (picked && localStorage.getItem("ovis.tasks.scope") === null) localStorage.setItem("ovis.tasks.scope", picked);
+  }, [theme, scope] as const);
   const page = await context.newPage();
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(`${origin}/?pane=${encodeURIComponent("w1G:p1")}&view=terminal`);
+  await page.goto(`${origin}/?pane=${encodeURIComponent(pane)}&view=terminal`);
   await page.locator(".conn-live").waitFor({ state: "attached" });
   return { page, errors, phone, close: () => context.close() };
 }
@@ -225,6 +229,40 @@ try {
           assert.deepEqual(errors, []);
         } finally { await close(); }
         console.log(`PASS ${width}px ${theme}: groups, counts and +N more as told, the Needs you badge, every kind of row, task terminals hidden while listed, reconnecting, nothing once the list is gone, and the row buttons sent as offered`);
+      }
+      for (const width of [390, 1440]) {
+        const { page, errors, phone, close } = await open(browser, width, "light", { pane: "w1C:p1", scope: null });
+        try {
+          if (phone) assert.equal(await page.locator("#drawer-toggle .header-more-dot").getAttribute("data-count"), "3", "the badge counts every space");
+          await drawer(page, phone);
+          const scope = section(page).getByRole("group", { name: "Show tasks of" });
+          assert.equal(await scope.getByRole("button", { name: "This space" }).getAttribute("aria-pressed"), "true", "This space by default");
+          assert.equal((await section(page).locator(".tasks-scope-note").textContent())?.trim(), "checkout-api", "it names the space it shows");
+          const heads = () => section(page).locator(".tasks-group-toggle").evaluateAll((items) => items.map((item) => item.textContent));
+          assert.deepEqual(await heads(), ["Needs you1", "Ready0", "Working1", "Done0+"], "the open space's listed rows, and 0+ where the feed lists only part of a group");
+          assert.equal(await section(page).locator(".tasks-group.is-done .tasks-group-count").getAttribute("title"), "At least 0: Shepherdr lists only part of this group");
+          assert.equal((await section(page).locator(".tasks-group.is-done .tasks-more").textContent())?.trim(), "+4 more not listed, from any space");
+          assert.deepEqual(await section(page).locator(".task-row-title").allTextContents(), ["nightly-tests · Didn't run", "Idempotent payments"]);
+          const agents = await agentPanes(page);
+          assert.ok(!agents.includes("w1H:p1") && !agents.includes("w1C:p1"), `a task listed in another space still hides its terminal (${agents.join(", ")})`);
+          if (evidence) await section(page).screenshot({ path: join(evidence, `tasks-this-space-${width}.png`) });
+
+          await scope.getByRole("button", { name: "All" }).click();
+          assert.deepEqual(await heads(), ["Needs you3", "Ready1", "Working1", "Done5"], "All shows Shepherdr's own counts");
+          assert.equal(await section(page).locator(".tasks-scope-note").count(), 0);
+          if (evidence) await section(page).screenshot({ path: join(evidence, `tasks-all-${width}.png`) });
+          await page.reload();
+          await page.locator(".conn-live").waitFor({ state: "attached" });
+          await drawer(page, phone);
+          assert.equal(await section(page).getByRole("group", { name: "Show tasks of" }).getByRole("button", { name: "All" }).getAttribute("aria-pressed"), "true", "All is remembered on this device");
+          await section(page).getByRole("group", { name: "Show tasks of" }).getByRole("button", { name: "This space" }).click();
+
+          await page.evaluate(() => { const now = window.tasksNow()!; window.tasksSet({ ...now, groups: now.groups.map((group) => group.kind === "done" ? { ...group, count: 1 } : group) }); });
+          await section(page).locator(".tasks-group.is-done .tasks-more").waitFor({ state: "detached" });
+          assert.deepEqual((await heads()).at(-1), "Done0", "a fully listed group's count is whole");
+          assert.deepEqual(errors, []);
+        } finally { await close(); }
+        console.log(`PASS ${width}px: This space by default, its rows and honest counts, the badge and hidden terminals unchanged, All remembered`);
       }
     } finally { await browser.close(); }
   } finally { await server.stop(true); }

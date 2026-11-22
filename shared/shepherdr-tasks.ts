@@ -37,7 +37,13 @@ export interface ShepherdrTaskRow {
   title: string;
   body: string;
   name: string | null;
+  /** the space's name, for showing */
   space: string | null;
+  /**
+   * the space the row belongs to, as Shepherdr's place id: a Herdr app space id (an Ovis workspace id on this PC's
+   * herdr-core), `<machine>/<id>` on another machine; null where none is known (a machine's own alert)
+   */
+  place: string | null;
   machine: string | null;
   line: string | null;
   progress: number | null;

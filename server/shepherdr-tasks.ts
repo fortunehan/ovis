@@ -70,10 +70,14 @@ export function autoPrefix(folder: string): string {
   return prefix.toUpperCase();
 }
 
-/** A task by its ref (`OVIS-5`): the label its terminals carry (`<list slug>#<id>`) and the agents herdr-task started for it. */
+/**
+ * A task by its ref (`OVIS-5`): the label its terminals carry (`<list slug>#<id>`), the agents herdr-task started for
+ * it, and the space herdr-task recorded it in (Shepherdr's place id), when it did.
+ */
 export interface TaskIdentity {
   label: string;
   agents: string[];
+  space?: string;
 }
 
 /** This PC's task lists: each task's identity by its ref. A list that won't parse is skipped. */
@@ -90,7 +94,7 @@ export function readTaskIdentities(dir: string): Map<string, TaskIdentity> {
     for (const task of list["tasks"]) {
       if (!isRecord(task) || typeof task["id"] !== "number") continue;
       const agents = Array.isArray(task["agents"]) ? task["agents"].flatMap((agent) => isRecord(agent) && typeof agent["address"] === "string" && !agent["ended"] ? [agent["address"]] : []) : [];
-      out.set(`${prefix}-${task["id"]}`, { label: `${slug}#${task["id"]}`, agents });
+      out.set(`${prefix}-${task["id"]}`, { label: `${slug}#${task["id"]}`, agents, ...(typeof task["space"] === "string" && task["space"] ? { space: task["space"] } : {}) });
     }
   }
   return out;
@@ -151,20 +155,22 @@ export function tasksOf(doc: GlanceDoc, stale: boolean, terminals: readonly Term
     const id = task?.replace(/#.*$/, "") ?? null;
     const remote = id !== null && id.includes(":");
     const ref = id === null ? null : id.slice(id.lastIndexOf(":") + 1);
-    const place = placeOf(item["url"]);
+    const linked = placeOf(item["url"]);
+    // a Ready row links to its Accept (`./#accept=…`), not its place: its task's own record names the space
+    const place = linked ?? (ref !== null && !remote ? identities.get(ref)?.space ?? null : null);
     const key = text(item["key"]) ?? "";
     const assistant = task === null && item["type"] === "need" && !key.startsWith("auto:");
     const chat = isRecord(item["answer"]) ? text(item["answer"]["chat"]) : isRecord(item["reply"]) ? text(item["reply"]["chat"]) : null;
     let open: ShepherdrRowOpen;
     let own: string[] = [];
-    if (remote || (task === null && place?.includes("/"))) {
+    if (remote || (task === null && linked?.includes("/"))) {
       open = { kind: "other-machine", machine: text(item["machine"]) };
     } else if (ref !== null) {
       own = taskTerminals(identities.get(ref), live, children);
       const agent = mainAgent(own, live);
       open = agent ? { kind: "terminal", pane_id: agent } : { kind: "no-terminal" };
     } else if (assistant) {
-      const found = live.find((terminal) => terminal.labels?.[ROLE_LABEL] === "coordinator" && ((chat !== null && terminal.labels?.[CHAT_LABEL] === chat) || (place !== null && terminal.labels?.[ASSISTANT_SPACE_LABEL] === place)));
+      const found = live.find((terminal) => terminal.labels?.[ROLE_LABEL] === "coordinator" && ((chat !== null && terminal.labels?.[CHAT_LABEL] === chat) || (linked !== null && terminal.labels?.[ASSISTANT_SPACE_LABEL] === linked)));
       open = found ? { kind: "terminal", pane_id: found.address } : { kind: "no-terminal" };
     } else {
       open = { kind: "words" };
@@ -172,7 +178,7 @@ export function tasksOf(doc: GlanceDoc, stale: boolean, terminals: readonly Term
     const row: ShepherdrTaskRow = {
       key, group: text(item["kind"]) ?? "", type: text(item["type"]) ?? "", ref,
       title: text(item["title"]) ?? "", body: text(item["body"]) ?? "",
-      name: text(item["name"]), space: text(item["space"]), machine: text(item["machine"]), line: text(item["line"]),
+      name: text(item["name"]), space: text(item["space"]), place, machine: text(item["machine"]), line: text(item["line"]),
       progress: number(item["progress"]), left: text(item["left"]), at: number(item["at"]),
       open, terminals: own,
     };

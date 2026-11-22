@@ -97,4 +97,11 @@ export const SIDEBAR_ZH: Record<string, string> = {
   "Accepting finishes this task and merges its work.": "接受会完成这个任务并合并它的改动。",
   "Other answer": "其他回答",
   "Send answer": "发送回答",
+  "Show tasks of": "显示哪些任务",
+  "This space": "当前工作区",
+  "No space open, showing all": "未打开工作区，显示全部",
+  "Not a Shepherdr space, showing all": "不是 Shepherdr 工作区，显示全部",
+  "At least {count}: Shepherdr lists only part of this group": "至少 {count} 个：Shepherdr 只列出了这一组的一部分",
+  "{count}+|at least": "{count}+",
+  "+{count} more not listed, from any space": "另有 {count} 个未列出，可能来自任意工作区",
 };
