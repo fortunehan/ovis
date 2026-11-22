@@ -5,6 +5,7 @@ import type { AgentRowTokens } from "../shared/pane-tokens.ts";
 import type { SharedPreferences } from "../shared/preferences.ts";
 import type { PanePromptResponse, SessionSnapshot } from "../shared/protocol.ts";
 import type { SeenFinish } from "../shared/seen.ts";
+import type { ShepherdrTasks } from "../shared/shepherdr-tasks.ts";
 import { AccountPcError, MachineActionRequired, MachineManager, PcUpdateRefused, type AccountPcFailure } from "./machines.ts";
 import { TypedCodeError, type TypedCodeFailure } from "../shared/relay-code-offer.ts";
 import { TailnetPcError } from "./tailnet-pcs.ts";
@@ -126,7 +127,9 @@ export async function handleMachineRequest(request: Request, manager: MachineMan
   /** this PC's owner (access.ts ownerAccess): only they may start or stop updates of its PCs */
   owner = false,
   /** OVIS_ACCOUNT_OPENS_ALL is on here: only then does the roster carry a block to another PC's account records */
-  accountOpensAll = false): Promise<Response> {
+  accountOpensAll = false,
+  /** the Tasks section (server/shepherdr-tasks.ts), where this PC reads Shepherdr */
+  shepherdrTasks?: { get(): ShepherdrTasks | null; subscribe(listener: (tasks: ShepherdrTasks | null) => void): () => void }): Promise<Response> {
   const url = new URL(request.url);
   // A PC's file opens as this PC's /api/fs/file does, from any navigation: reading it changes
   // nothing, and Chrome on Android shows a PDF in the viewer's frame as an "Open" button whose
@@ -249,7 +252,7 @@ export async function handleMachineRequest(request: Request, manager: MachineMan
             if (bytes.byteLength > MACHINE_EVENTS_QUEUE_BYTES) large.push({ end: written, bytes: bytes.byteLength });
             retell();
           };
-          stop = subscribeMachineEvents({ manager, preferences, herdrSidebar, seen, pairings },
+          stop = subscribeMachineEvents({ manager, preferences, herdrSidebar, seen, pairings, ...(shepherdrTasks ? { shepherdrTasks } : {}) },
             (event) => send(`data: ${JSON.stringify(wireMachineEvent(event, url.searchParams.get("compact_agents") === "1"))}\n\n`));
           if (closed) { cleanup(); return; }
           heartbeat = machineEventsClock.heartbeat(() => send(": heartbeat\n\n"));

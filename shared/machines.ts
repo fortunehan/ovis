@@ -3,6 +3,7 @@ import type { SharedPreferences } from "./preferences.ts";
 import type { HealthAuth, SecuritySummary, ServerMessage, SessionSnapshot } from "./protocol.ts";
 import type { MoveStatus, MoveUnavailable } from "./runtime-move.ts";
 import type { SeenFinish } from "./seen.ts";
+import type { ShepherdrTasksEvent } from "./shepherdr-tasks.ts";
 
 export const LOCAL_MACHINE = "local";
 export const BRIDGE_PROTOCOL = 1;
@@ -454,6 +455,8 @@ export type MachineEvent = { type: "machines"; machines: Machine[] } | { type: "
   | { type: "herdr-sidebar"; agents: AgentRowTokens | null }
   /** finishes a browser of this server presented (shared/seen.ts): every record when the stream opens, then each change */
   | { type: "seen"; finishes: SeenFinish[] }
+  /** Shepherdr's glance feed on this server's PC, for the Tasks section (shared/shepherdr-tasks.ts); no `tasks`: none */
+  | ShepherdrTasksEvent
   | DevicePairedEvent
   | DeviceRemovedEvent
   | RelayPairingsEvent

@@ -93,7 +93,7 @@ export const STATE_WORD: Readonly<Record<MachineState, string>> = {
   error: "Connection error",
 };
 
-interface Props { machines: Machine[]; footerStart?: ReactNode; allMachines?: Machine[]; selectedMachineId: string; selectedPaneId: string | null; activity: SidebarActivity; actions: AppActions; watching?: boolean; appLayout?: (machineId: string) => LayoutOffer; drawerOpen?: boolean; filterRequest?: number; onSelect(machineId: string, paneId: string | null): void; onNew(machineId: string): void; onSetup(machine: Machine, update?: boolean): void; onUsageLogin(paneId: string): void }
+interface Props { machines: Machine[]; footerStart?: ReactNode; /** the Tasks section, above the PCs and the agents */ tasks?: ReactNode; allMachines?: Machine[]; selectedMachineId: string; selectedPaneId: string | null; activity: SidebarActivity; actions: AppActions; watching?: boolean; appLayout?: (machineId: string) => LayoutOffer; drawerOpen?: boolean; filterRequest?: number; onSelect(machineId: string, paneId: string | null): void; onNew(machineId: string): void; onSetup(machine: Machine, update?: boolean): void; onUsageLogin(paneId: string): void }
 export function MachineSidebar(props: Props) {
   const t = useT();
   const activity = props.activity;
@@ -259,6 +259,7 @@ export function MachineSidebar(props: Props) {
       {query !== "" ? <button type="button" className="sidebar-filter-clear" aria-label={t("Clear filter")} title={t("Clear filter")} onClick={clearFilter}><X aria-hidden="true" /></button>
         : closable && <button type="button" className="sidebar-filter-clear" aria-label={t("Close filter")} title={t("Close filter")} onClick={closeFilter}><X aria-hidden="true" /></button>}
     </div>}
+    {props.tasks}
     {settings.agentGroups && agentList}
     {settings.agentGroups && <SidebarSplit shell={shell} order={order} split={splits[order]} controls={agentsListId} onSplit={changeSplit} onFold={foldSections} />}
     <section className="pcs-sidebar" aria-label={t("PCs")}>

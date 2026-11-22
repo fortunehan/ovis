@@ -35,7 +35,8 @@ import { AgentInstaller } from "./agent-catalog-install.ts";
 import { type BackgroundAgentDeps } from "./background-agent.ts";
 import { herdrSocketPath, ping } from "./herdr/client.ts";
 import { coreConnection, coreSeenMarker, hcBin, hcMachine, NoAltRuntimeError, NoHerdrCoreError, runtime, setRuntime, startRuntime } from "./herdr-core/runtime.ts";
-import { capabilities } from "./runtime/capabilities.ts";
+import { capabilities, HERDR_CORE } from "./runtime/capabilities.ts";
+import { ShepherdrTasksService } from "./shepherdr-tasks.ts";
 import { chooseRuntime, runtimeService, type RuntimeChoice, type RuntimeService } from "./herdr-core/runtime-choice.ts";
 import { moveService, type HcInstaller } from "./runtime-move-service.ts";
 import { moveLockPath } from "./runtime-move-lock.ts";
@@ -226,6 +227,8 @@ export function createServer(
     /** accept plain-http loopback push endpoints (server/push.ts); only tests delivering to push.fake.ts set it */
     pushLoopbackHttp?: boolean;
     desktopActivity?: boolean;
+    /** read Shepherdr's glance feed on this PC for the Tasks section (herdr-core only; off in tests, which never read the person's Shepherdr) */
+    shepherdrTasks?: boolean;
     /** OVIS_ACCOUNT_OPENS_ALL, the Step 2 release flag (off by default): screen proof (server/account/local-confirm.ts) exists only with it */
     accountOpensAll?: boolean;
     /** the platform the key confirm is decided by; tests name another than this machine's */
@@ -463,6 +466,12 @@ export function createServer(
   const browserSnapshot = options.profile === "machine" ? <S extends SessionSnapshot>(snapshot: S): S => machineSnapshot(shownSnapshot(snapshot)) : shownSnapshot;
   const core = createCore({ options: { ...options, stateDir, openCodeState, orderSequence, ...(options.profile === "machine" ? { herdrFailure: machineFailure } : {}), serverId: () => ovisRelay.serverId(), seenMoved: (from, to, renumber) => seen.moved(LOCAL_MACHINE, from, to, renumber) }, devices, preferences, usage, usageLogin, browserSnapshot, TYPED_SETTLE_MS, KEY_SETTLE_MS, SUBMIT_DEADLINE_MS, SUBMIT_DELAY_MS, DRAFT_CLEAR_WAIT_MS, DRAFT_CLEAR_POLL_MS });
   const { machines, collector, queueFirstMessage, push } = core;
+  const shepherdrTasks = options.shepherdrTasks === true && capabilities().runtime === HERDR_CORE.runtime && !options.bridgeOnly
+    ? new ShepherdrTasksService({ terminals: async () => (await coreConnection().call("terminal.list", {})).terminals })
+    : null;
+  const stopShepherdrWatch = shepherdrTasks && machines ? machines.subscribe((event) => {
+    if (event.type === "machine-message" && event.machine_id === LOCAL_MACHINE && (event.message.type === "session-changed" || event.message.type === "pane-exited")) shepherdrTasks.terminalsChanged();
+  }) : null;
   const seen = new SeenStore(stateDir, (pc, epoch) => machines?.finishEnded(pc, epoch) ?? false);
   machines?.subscribe((event) => {
     if (event.type !== "machine-message" || event.machine_id === LOCAL_MACHINE || event.message.type !== "pane-moved") return;
@@ -646,7 +655,7 @@ export function createServer(
       switchRuntime: () => { const answer = options.runtimeService!.request("herdr-core"); return answer.ok ? null : answer.message; },
       ...(options.herdrCoreInstaller ? { installer: options.herdrCoreInstaller } : {}),
     }) : null,
-    options, relay: ovisRelay, relayReceiptIds: new RelayReceiptIds(), hostname, token, bridgeToken, bootId, devices, accountMailbox, accountIntroductions: new AccountIntroductions(Date.now, join(stateDir, "account-introductions.json")), accountHolds, safetyLog, catchUp, accountRows, preferences, herdrSidebar, identityOf, serveOnly, portalGuards, shellAgents, agentDetector, agentOffered, agentInstaller, openCodeState, cliProxyRoutes, usageLogin, usage, usageAccounts, systemSampler, fontsDir: join(stateDir, "fonts"), voice, browserSnapshot, core, seen, piReader, orderSequence, clientConnectionLog, requestLog, portalStartup, localConfirms, recoveryReleases, pendingRedemptions, keyProofPairings, askScreenForKey: askScreen, lockRoutes: lockHandler, lockSignal,
+    options, relay: ovisRelay, relayReceiptIds: new RelayReceiptIds(), hostname, token, bridgeToken, bootId, devices, accountMailbox, accountIntroductions: new AccountIntroductions(Date.now, join(stateDir, "account-introductions.json")), accountHolds, safetyLog, catchUp, accountRows, preferences, herdrSidebar, shepherdrTasks, identityOf, serveOnly, portalGuards, shellAgents, agentDetector, agentOffered, agentInstaller, openCodeState, cliProxyRoutes, usageLogin, usage, usageAccounts, systemSampler, fontsDir: join(stateDir, "fonts"), voice, browserSnapshot, core, seen, piReader, orderSequence, clientConnectionLog, requestLog, portalStartup, localConfirms, recoveryReleases, pendingRedemptions, keyProofPairings, askScreenForKey: askScreen, lockRoutes: lockHandler, lockSignal,
     get portalStartupResult() { return portalStartupResult; },
   };
   ovisRelay.resume(services, server.port ?? DEFAULT_PORT);
@@ -708,6 +717,7 @@ export function createServer(
   const releaseFilePool = holdFilePool();
   const releaseCommandHistory = holdCommandHistory();
   core.start();
+  shepherdrTasks?.start();
 
   return {
     context: socketContext(server),
@@ -741,6 +751,8 @@ export function createServer(
       });
       piReader.close();
       stopPinBridge?.stop();
+      stopShepherdrWatch?.();
+      shepherdrTasks?.stop();
       safetyLog?.close();
       void usageLogin.stopAll();
       void shellAgents.stop();
@@ -874,6 +886,7 @@ export async function serve(): Promise<void> {
       runtimeService: runtimeService({ stateDir, port: Number(startEnv["PORT"] || DEFAULT_PORT), serving: choice.runtime, source: choice.source, ...(fallback ? { fallback } : {}), env: startEnv, core: herdrCoreFacts, accepted: () => launchAccepted, restart: (id) => process.send?.({ type: "runtime-restart", id }) }) }),
       portal, relay, tailnet, telemetry, registerBridge: true, herdrProfiles: readHerdrProfiles, shellAgents: new ShellAgentLocator(), agentDetector: new AgentDetector({ locate: catalogLocator({ probe: defaultLoginProbe() }) }), stateDir, siblingStateDir: siblingStateDir(stateDir),
       desktopActivity: process.env["OVIS_DESKTOP_APP"] === "1",
+      shepherdrTasks: !profile,
       ...(desktopOwnerFd !== null ? { desktopOwner: desktopOwnerFdChannel(desktopOwnerFd) } : {}),
       ...(lanConfig !== null && !("error" in lanConfig) ? { lanHttps: lanConfig } : {}) });
     ownership?.listening(instance.port, instance.hostname);

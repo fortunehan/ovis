@@ -53,6 +53,7 @@
   "scripts/sidebar-heads-demo-regression.ts": 44,
   "scripts/replay-clipboard-demo-regression.ts": 42,
   "scripts/hide-pc-demo-regression.ts": 42,
+  "scripts/tasks-section-demo-regression.ts": 40,
   "scripts/terminal-switch-regression.ts": 40,
   "scripts/theme-file-demo-regression.ts": 40,
   "scripts/sidebar-selection-contrast-demo-regression.ts": 40,

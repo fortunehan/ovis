@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { Machine, MachineEvent } from "../shared/machines.ts";
+import type { ShepherdrTasks } from "../shared/shepherdr-tasks.ts";
 import { subscribeMachineEvents } from "./machine-events.ts";
 import type { MachineManager } from "./machines.ts";
 
@@ -42,5 +43,27 @@ describe("machine event document", () => {
     const { emit, told } = document();
     emit({ type: "machines", machines: [machine("reconnecting")] });
     expect(told.map((event) => event.type)).toEqual(["machines", "machines"]);
+  });
+});
+
+describe("the Tasks section on the machine events", () => {
+  const manager: Pick<MachineManager, "subscribe"> = { subscribe: () => () => undefined };
+  const tasks: ShepherdrTasks = { groups: [{ kind: "needs", label: "Needs you", count: 1 }], rows: [], needs: 1, stale: false, at: 5 };
+
+  it("starts every stream with the list now, none included, then tells each change", () => {
+    let listener: (next: ShepherdrTasks | null) => void = () => undefined;
+    let now: ShepherdrTasks | null = null;
+    const told: MachineEvent[] = [];
+    subscribeMachineEvents({ manager, shepherdrTasks: { get: () => now, subscribe: (next) => { listener = next; return () => undefined; } } }, (event) => told.push(event));
+    now = tasks;
+    listener(tasks);
+    listener(null);
+    expect(told).toEqual([{ type: "shepherdr-tasks" }, { type: "shepherdr-tasks", tasks }, { type: "shepherdr-tasks" }]);
+  });
+
+  it("tells nothing of it to a stream given no document", () => {
+    const told: MachineEvent[] = [];
+    subscribeMachineEvents({ manager }, (event) => told.push(event));
+    expect(told.filter((event) => event.type === "shepherdr-tasks")).toEqual([]);
   });
 });

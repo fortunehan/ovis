@@ -2,6 +2,7 @@
 import type { DevicePairedEvent, DeviceRemovedEvent, PendingRedemptionsEvent, Machine, MachineEvent, RelayPairingsEvent, RemotePairingsEvent } from "../shared/machines.ts";
 import type { AgentRowTokens } from "../shared/pane-tokens.ts";
 import type { SharedPreferences } from "../shared/preferences.ts";
+import type { ShepherdrTasks } from "../shared/shepherdr-tasks.ts";
 import type { SeenFinish } from "../shared/seen.ts";
 import type { MachineManager } from "./machines.ts";
 import { decidedRowTokens, reportedTokenValues, snapshotWithoutHiddenTokens, withoutHiddenTokens } from "./herdr-sidebar.ts";
@@ -11,12 +12,14 @@ export interface MachineEventDocument {
   preferences?: { get(): SharedPreferences; subscribe(listener: (preferences: SharedPreferences) => void): () => void };
   herdrSidebar?: { get(): AgentRowTokens | null; subscribe(listener: (agents: AgentRowTokens | null) => void): () => void };
   seen?: { list(): SeenFinish[]; subscribe(listener: (finish: SeenFinish) => void): () => void };
+  /** the Tasks section (server/shepherdr-tasks.ts); its get() is null where this PC reads no Shepherdr now */
+  shepherdrTasks?: { get(): ShepherdrTasks | null; subscribe(listener: (tasks: ShepherdrTasks | null) => void): () => void };
   /** Filtered for the authenticated device and browser at the transport's admission boundary. */
   pairings?: { subscribe(listener: (event: DevicePairedEvent | DeviceRemovedEvent | RelayPairingsEvent | RemotePairingsEvent | PendingRedemptionsEvent) => void): () => void };
 }
 
 /** Initial documents and subsequent invalidations use exactly the same redaction on either transport. */
-export function subscribeMachineEvents({ manager, preferences, herdrSidebar, seen, pairings }: MachineEventDocument, send: (event: MachineEvent) => void): () => void {
+export function subscribeMachineEvents({ manager, preferences, herdrSidebar, seen, shepherdrTasks, pairings }: MachineEventDocument, send: (event: MachineEvent) => void): () => void {
   const stops: Array<() => void> = [];
   let active = true;
   let lastRoster: string | null = null;
@@ -62,6 +65,12 @@ export function subscribeMachineEvents({ manager, preferences, herdrSidebar, see
     if (seen) {
       tell({ type: "seen", finishes: seen.list() });
       stops.push(seen.subscribe((finish) => tell({ type: "seen", finishes: [finish] })));
+    }
+    if (shepherdrTasks) {
+      const sendTasks = (tasks: ShepherdrTasks | null) => tell(tasks ? { type: "shepherdr-tasks", tasks } : { type: "shepherdr-tasks" });
+      // every stream starts with it, none included, so a page that read another PC's list before drops it
+      sendTasks(shepherdrTasks.get());
+      stops.push(shepherdrTasks.subscribe(sendTasks));
     }
     if (pairings) stops.push(pairings.subscribe(tell));
     return stop;

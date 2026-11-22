@@ -1,7 +1,7 @@
 /**
  * Simplified Chinese for the keys only the sidebar files use:
  * components/Sidebar.tsx, components/AgentSidebar.tsx, components/SidebarResizer.tsx,
- * components/SidebarSplit.tsx, components/InboxList.tsx, lib/inboxRow.ts.
+ * components/SidebarSplit.tsx, components/InboxList.tsx, lib/inboxRow.ts, components/TasksSection.tsx.
  * Register and fixed terms follow ../i18n.zh.ts; a key another feature also uses goes there.
  */
 export const SIDEBAR_ZH: Record<string, string> = {
@@ -84,4 +84,12 @@ export const SIDEBAR_ZH: Record<string, string> = {
   "Remove from {group}": "从 {group} 移出",
   "{count} working": "{count} 个工作中",
   "On this device, an agent's helpers fold into one line under it in the Agents list, with their count. A helper that needs you and the one you selected stay in sight.": "在此设备的 Agent 列表中，把 Agent 的助手折叠成它下方的一行，并显示数量。需要你回应的助手和当前选中的助手仍会显示。",
+  "Tasks": "任务",
+  "Tasks: {count} need you": "任务：{count} 个需回应",
+  "Reconnecting to Shepherdr…": "正在重新连接 Shepherdr…",
+  "+{count} more": "还有 {count} 个",
+  "{left} left": "剩余 {left}",
+  "No terminal running": "没有运行中的终端",
+  "On {machine}, can't be opened from this PC": "在 {machine} 上运行，无法从这台电脑打开",
+  "On another machine, can't be opened from this PC": "在另一台机器上运行，无法从这台电脑打开",
 };
